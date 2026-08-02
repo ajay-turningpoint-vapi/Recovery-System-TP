@@ -1,0 +1,214 @@
+// Prisma Schema for Payment Collection Management System
+// Supports MariaDB / MySQL or SQLite fallback
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            Int           @id @default(autoincrement())
+  username      String        @unique
+  password_hash String
+  name          String
+  role          String        // ADMIN | SALESMAN
+  salesman_code String?
+  mobile        String?
+  email         String?
+  status        String        @default("ACTIVE")
+  created_at    DateTime      @default(now())
+  updated_at    DateTime      @updatedAt
+
+  createdFollowups Followup[]
+  createdPayments  Payment[]
+  whatsappLogs     WhatsappLog[]
+
+  @@map("users")
+}
+
+model Customer {
+  id               Int           @id @default(autoincrement())
+  customer_code    String        @unique
+  customer_name    String
+  alias            String?
+  address          String?
+  city             String?
+  state            String?
+  gstin            String?
+  contact_person   String?
+  mobile           String?
+  alternate_mobile String?
+  email            String?
+  salesman_code    String?
+  credit_limit     Float         @default(0)
+  credit_days      Int           @default(0)
+  status           String        @default("ACTIVE")
+  created_at       DateTime      @default(now())
+  updated_at       DateTime      @updatedAt
+
+  invoices     Invoice[]
+  payments     Payment[]
+  followups    Followup[]
+  whatsappLogs WhatsappLog[]
+
+  @@index([customer_code])
+  @@index([salesman_code])
+  @@index([mobile])
+  @@map("customers")
+}
+
+model Invoice {
+  id                  Int           @id @default(autoincrement())
+  invoice_number      String        @unique
+  invoice_date        DateTime
+  customer_id         Int
+  salesman_code       String?
+  invoice_amount      Float
+  paid_amount         Float         @default(0)
+  outstanding_amount  Float
+  due_date            DateTime
+  source_voucher_code String?
+  status              String        @default("NOT_DUE") // NOT_DUE, DUE_TODAY, OVERDUE, PARTIALLY_PAID, PAID
+  imported_at         DateTime?     @default(now())
+  updated_at          DateTime      @updatedAt
+
+  customer  Customer      @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+  items     InvoiceItem[]
+  payments  Payment[]
+  followups Followup[]
+
+  @@index([invoice_number])
+  @@index([salesman_code])
+  @@index([invoice_date])
+  @@index([due_date])
+  @@index([outstanding_amount])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id         Int     @id @default(autoincrement())
+  invoice_id Int
+  item_name  String
+  hsn        String?
+  quantity   Float
+  unit       String?
+  rate       Float
+  discount   Float   @default(0)
+  tax        Float   @default(0)
+  amount     Float
+
+  invoice Invoice @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
+
+  @@map("invoice_items")
+}
+
+model Payment {
+  id               Int      @id @default(autoincrement())
+  customer_id      Int
+  invoice_id       Int?
+  payment_date     DateTime
+  amount           Float
+  payment_mode     String   // Cash, Cheque, NEFT, RTGS, IMPS, UPI, Other
+  reference_number String?
+  bank             String?
+  remark           String?
+  created_by       Int?
+  created_at       DateTime @default(now())
+
+  customer Customer @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+  invoice  Invoice? @relation(fields: [invoice_id], references: [id], onDelete: SetNull)
+  user     User?    @relation(fields: [created_by], references: [id], onDelete: SetNull)
+
+  @@map("payments")
+}
+
+model Followup {
+  id                     Int       @id @default(autoincrement())
+  customer_id            Int
+  invoice_id             Int?
+  salesman_code          String?
+  followup_date          DateTime
+  followup_time          String?
+  followup_type          String    // Phone Call, WhatsApp, Visit, Email, Payment Commitment, Payment Received, Other
+  status                 String    @default("Pending") // Pending, Completed, Payment Promised, Payment Received, Customer Not Responding, Dispute, Postponed, Cancelled
+  expected_payment_date  DateTime?
+  expected_payment_amount Float?
+  promise_to_pay_date    DateTime?
+  promise_to_pay_amount  Float?
+  remark                 String?
+  next_followup_date     DateTime?
+  next_followup_time     String?
+  priority               String    @default("Medium") // Low, Medium, High, Urgent
+  attachment             String?
+  created_by             Int?
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @updatedAt
+
+  customer Customer @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+  invoice  Invoice? @relation(fields: [invoice_id], references: [id], onDelete: SetNull)
+  user     User?    @relation(fields: [created_by], references: [id], onDelete: SetNull)
+
+  @@index([salesman_code])
+  @@index([followup_date])
+  @@map("followups")
+}
+
+model WhatsappLog {
+  id          Int      @id @default(autoincrement())
+  customer_id Int
+  mobile      String
+  message     String
+  invoice_ids String?
+  sent_by     Int?
+  sent_at     DateTime @default(now())
+  status      String   @default("SENT")
+
+  customer Customer @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+  user     User?    @relation(fields: [sent_by], references: [id], onDelete: SetNull)
+
+  @@map("whatsapp_logs")
+}
+
+model ImportLog {
+  id                Int       @id @default(autoincrement())
+  started_at        DateTime  @default(now())
+  completed_at      DateTime?
+  total_records     Int       @default(0)
+  inserted_records  Int       @default(0)
+  updated_records   Int       @default(0)
+  failed_records    Int       @default(0)
+  status            String    @default("RUNNING") // RUNNING, SUCCESS, FAILED
+  error_message     String?
+
+  @@map("import_logs")
+}
+
+model MssqlConfig {
+  id                       Int      @id @default(1)
+  host                     String   @default("localhost")
+  port                     Int      @default(1433)
+  database_name            String   @default("BUSY_ERP_DB")
+  username                 String   @default("sa")
+  password_encrypted       String   @default("")
+  encrypt                  Boolean  @default(false)
+  trust_server_certificate Boolean  @default(true)
+  import_sql               String   @default("SELECT VOU_NO, VOUCHER_DATE, PARTY, ALIAS, ADDRESS, CITY, STATE, GSTIN, MOBILE, SALESMAN, ITEM_NAME, HSN, QTY, RATE, TAX, DISC, TOTAL_AMOUNT, DUE_DATE FROM VOUCHERS WHERE VOUCHER_DATE >= @startdate@ AND VOUCHER_DATE <= @enddate@")
+  updated_at               DateTime @updatedAt
+
+  @@map("mssql_configs")
+}
+
+model WhatsappTemplate {
+  id         Int      @id @default(autoincrement())
+  name       String   @unique // Payment Reminder, Payment Due, Payment Commitment, Custom
+  content    String
+  is_default Boolean  @default(false)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@map("whatsapp_templates")
+}
