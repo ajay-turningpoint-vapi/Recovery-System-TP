@@ -254,9 +254,118 @@ async function getCustomerPendingBills(req, res, next) {
   }
 }
 
+/**
+ * 360 Customer Unified Activity Timeline (Blueprint Page 21)
+ */
+async function getCustomer360Timeline(req, res, next) {
+  try {
+    const customerId = parseInt(req.params.id, 10);
+
+    const [customer, invoices, followups, payments, whatsappLogs, promiseLogs] = await Promise.all([
+      prisma.customer.findUnique({ where: { id: customerId } }),
+      prisma.invoice.findMany({ where: { customer_id: customerId } }),
+      prisma.followup.findMany({ where: { customer_id: customerId } }),
+      prisma.payment.findMany({ where: { customer_id: customerId }, include: { invoice: true } }),
+      prisma.whatsappLog.findMany({ where: { customer_id: customerId } }),
+      prisma.promiseLog.findMany({ where: { customer_id: customerId } }),
+    ]);
+
+    if (!customer) {
+      return res.status(404).json({ success: false, message: 'Customer not found' });
+    }
+
+    const events = [];
+
+    // 1. Invoices
+    for (const inv of invoices) {
+      events.push({
+        id: `inv_${inv.id}`,
+        timestamp: inv.invoice_date,
+        type: 'INVOICE_CREATED',
+        badgeColor: 'blue',
+        title: `Invoice ${inv.invoice_number} Issued`,
+        detail: `Amount: ₹${inv.invoice_amount.toLocaleString()} · Outstanding: ₹${inv.outstanding_amount.toLocaleString()}`,
+      });
+    }
+
+    // 2. Follow-ups
+    for (const f of followups) {
+      events.push({
+        id: `fol_${f.id}`,
+        timestamp: f.followup_date,
+        type: 'CALL_LOG',
+        badgeColor: f.outcome === 'ANSWERED' ? 'emerald' : 'amber',
+        title: `${f.followup_type} (${f.outcome || 'Logged'})`,
+        detail: `Spoke with: ${f.spoke_with || 'N/A'} · Remark: ${f.remark || 'None'}`,
+      });
+    }
+
+    // 3. WhatsApp Logs
+    for (const w of whatsappLogs) {
+      events.push({
+        id: `wa_${w.id}`,
+        timestamp: w.sent_at,
+        type: 'WHATSAPP_SENT',
+        badgeColor: 'green',
+        title: 'WhatsApp Message Delivered',
+        detail: w.message ? (w.message.length > 80 ? w.message.substring(0, 80) + '...' : w.message) : 'Sent template',
+      });
+    }
+
+    // 4. Promise Logs
+    for (const p of promiseLogs) {
+      if (p.status === 'BROKEN') {
+        events.push({
+          id: `p_broken_${p.id}`,
+          timestamp: p.broken_at || p.updated_at,
+          type: 'PROMISE_BROKEN',
+          badgeColor: 'red',
+          title: '⚠️ Broken Promise Warning',
+          detail: `Promised ₹${p.promised_amount.toLocaleString()} on ${new Date(p.promised_date).toLocaleDateString()} was missed`,
+        });
+      } else {
+        events.push({
+          id: `p_created_${p.id}`,
+          timestamp: p.created_at,
+          type: 'PROMISE_CREATED',
+          badgeColor: 'purple',
+          title: 'Payment Commitment Recorded',
+          detail: `Promised ₹${p.promised_amount.toLocaleString()} due on ${new Date(p.promised_date).toLocaleDateString()}`,
+        });
+      }
+    }
+
+    // 5. Payments
+    for (const pay of payments) {
+      events.push({
+        id: `pay_${pay.id}`,
+        timestamp: pay.payment_date,
+        type: 'PAYMENT_RECEIVED',
+        badgeColor: 'emerald',
+        title: `₹${pay.amount.toLocaleString()} Payment Received`,
+        detail: `Mode: ${pay.payment_mode} · Adjusted to Invoice ${pay.invoice?.invoice_number || 'General Ledger'}`,
+      });
+    }
+
+    // Sort descending by timestamp
+    events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    res.json({
+      success: true,
+      customer_id: customerId,
+      customer_name: customer.customer_name,
+      total_events: events.length,
+      timeline: events,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getCustomers,
   getCustomerById,
   getCustomerInvoiceItems,
   getCustomerPendingBills,
+  getCustomer360Timeline,
 };

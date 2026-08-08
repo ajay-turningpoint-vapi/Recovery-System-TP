@@ -28,16 +28,18 @@ export default function CustomerDashboard() {
   const [billItems, setBillItems] = useState([]);
   const [loadingPendingBills, setLoadingPendingBills] = useState(false);
   const [selectedBillModal, setSelectedBillModal] = useState(null);
+  const [timelineEvents, setTimelineEvents] = useState([]);
 
   // Fetch customer details from MariaDB + live ERP pending bills in parallel
   const fetchCustomerData = async () => {
     setLoading(true);
     setLoadingPendingBills(true);
     try {
-      const [custRes, billsRes, itemsRes] = await Promise.allSettled([
+      const [custRes, billsRes, itemsRes, timelineRes] = await Promise.allSettled([
         api.get(`/customers/${id}`),
         api.get(`/customers/${id}/pending-bills`),
-        api.get(`/customers/${id}/items`)
+        api.get(`/customers/${id}/items`),
+        api.get(`/customers/${id}/timeline`)
       ]);
 
       if (custRes.status === 'fulfilled' && custRes.value.data.success) {
@@ -52,6 +54,10 @@ export default function CustomerDashboard() {
 
       if (itemsRes.status === 'fulfilled' && itemsRes.value.data.success) {
         setBillItems(itemsRes.value.data.items || []);
+      }
+
+      if (timelineRes.status === 'fulfilled' && timelineRes.value.data.success) {
+        setTimelineEvents(timelineRes.value.data.timeline || []);
       }
     } catch (err) {
       console.error('Error fetching customer data:', err);
@@ -402,6 +408,20 @@ export default function CustomerDashboard() {
           >
             💳 Collection History ({customer.payments?.length || 0})
           </button>
+
+          <button
+            onClick={() => setActiveTab('TIMELINE')}
+            style={{
+              background: 'transparent',
+              fontSize: '0.95rem',
+              fontWeight: 800,
+              color: activeTab === 'TIMELINE' ? '#4f46e5' : '#64748b',
+              borderBottom: activeTab === 'TIMELINE' ? '3px solid #4f46e5' : '3px solid transparent',
+              paddingBottom: '0.75rem'
+            }}
+          >
+            ⏱️ 360° Activity Timeline
+          </button>
         </div>
 
         {/* Tab 1: Pending Bills & Invoices */}
@@ -678,6 +698,51 @@ export default function CustomerDashboard() {
                 )}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Tab 4: 360° Unified Activity Timeline (Blueprint Page 21) */}
+        {activeTab === 'TIMELINE' && (
+          <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '1.5rem', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              ⏱️ Unified 360° Customer Timeline ({timelineEvents.length} Events)
+            </h3>
+            
+            {timelineEvents.length === 0 ? (
+              <div style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>
+                No activity timeline events recorded yet.
+              </div>
+            ) : (
+              <div style={{ position: 'relative', paddingLeft: '1.5rem', borderLeft: '2px solid #e2e8f0', marginLeft: '0.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                {timelineEvents.map((evt) => (
+                  <div key={evt.id} style={{ position: 'relative' }}>
+                    <div style={{
+                      position: 'absolute',
+                      left: '-2.15rem',
+                      top: '0.2rem',
+                      width: '14px',
+                      height: '14px',
+                      borderRadius: '50%',
+                      backgroundColor: evt.badgeColor === 'red' ? '#ef4444' : evt.badgeColor === 'emerald' || evt.badgeColor === 'green' ? '#10b981' : evt.badgeColor === 'purple' ? '#a855f7' : '#3b82f6',
+                      border: '3px solid #ffffff',
+                      boxShadow: '0 0 0 1px #cbd5e1'
+                    }} />
+
+                    <div style={{ backgroundColor: '#f8fafc', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#0f172a' }}>{evt.title}</span>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b' }}>
+                          {evt.timestamp ? new Date(evt.timestamp).toLocaleString() : 'N/A'}
+                        </span>
+                      </div>
+                      <p style={{ fontSize: '0.825rem', color: '#475569', marginTop: '0.3rem', margin: 0 }}>
+                        {evt.detail}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

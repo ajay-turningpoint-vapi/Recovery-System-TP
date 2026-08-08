@@ -14,6 +14,7 @@ import WhatsappModule from './pages/WhatsappModule';
 import MssqlImport from './pages/MssqlImport';
 import Reports from './pages/Reports';
 import UserManagement from './pages/UserManagement';
+import ManagerCockpit from './pages/ManagerCockpit';
 import SalesmanWiseDashboard from './pages/SalesmanWiseDashboard';
 import Settings from './pages/Settings';
 
@@ -63,6 +64,10 @@ export default function App() {
 
           <Route element={<ProtectedRoute adminOnly={true}><MainLayout pageTitle="Salesman-Wise Dashboard" /></ProtectedRoute>}>
             <Route path="/salesmen-dashboard" element={<SalesmanWiseDashboard />} />
+          </Route>
+
+          <Route element={<ProtectedRoute adminOnly={true}><MainLayout pageTitle="Manager Cockpit" /></ProtectedRoute>}>
+            <Route path="/manager-cockpit" element={<ManagerCockpit />} />
           </Route>
 
           <Route element={<ProtectedRoute><MainLayout pageTitle="My Customers" /></ProtectedRoute>}>

@@ -10,6 +10,7 @@ import '../../core/widgets/smooth_widgets.dart';
 import '../../models/app_models.dart';
 import '../auth/login_screen.dart';
 import '../customer_detail/customer_detail_screen.dart';
+import '../cockpit/manager_cockpit_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final User user;
@@ -76,8 +77,65 @@ class _DashboardScreenState extends State<DashboardScreen>
     _fetchDashboardData();
     _fetchSalesmen();
     _fetchSalesmanWiseSummary();
+    // Register FCM notifications
+    Future.delayed(const Duration(milliseconds: 500), _registerPushNotifications);
     // Check if app was killed while a call/WhatsApp was in progress
     Future.delayed(const Duration(milliseconds: 800), _checkPendingFollowUp);
+  }
+
+  Future<void> _registerPushNotifications() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final hasAsked = prefs.getBool('fcm_permission_asked') ?? false;
+      if (!hasAsked) {
+        await prefs.setBool('fcm_permission_asked', true);
+        if (mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Row(
+                children: [
+                  Icon(Icons.notifications_active_outlined, color: AppColors.primaryIndigo),
+                  SizedBox(width: 8),
+                  Text('Enable Alerts?', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              content: const Text(
+                'Allow Recovery System to send push notifications for broken promises, urgent daily tasks, and billing disputes.',
+                style: TextStyle(fontSize: 13, height: 1.4, color: AppColors.textSecondary),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Deny', style: TextStyle(color: AppColors.textMuted)),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await _registerToken();
+                  },
+                  child: const Text('Allow'),
+                ),
+              ],
+            ),
+          );
+        }
+      } else {
+        await _registerToken();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _registerToken() async {
+    try {
+      final token = 'mock_fcm_token_${widget.user.username}_${widget.user.role.toLowerCase()}';
+      await ApiService.post('${ApiConstants.baseUrl}/users/push-token', {'fcm_token': token});
+      debugPrint('[FCM Notification] Push token registered: $token');
+    } catch (e) {
+      debugPrint('[FCM Notification] Token registration error: $e');
+    }
   }
 
   // ─── Persistent Follow-Up Helpers (survive app kill) ────────────────────────
@@ -809,6 +867,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<String>(
+                        isExpanded: true,
                         value: selectedType,
                         decoration: const InputDecoration(labelText: 'Follow-up Type', border: OutlineInputBorder()),
                         items: ['Phone Call', 'WhatsApp', 'Visit', 'Email', 'Payment Commitment', 'Payment Received', 'Other']
@@ -820,6 +879,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     const SizedBox(width: 10),
                     Expanded(
                       child: DropdownButtonFormField<String>(
+                        isExpanded: true,
                         value: selectedStatus,
                         decoration: const InputDecoration(labelText: 'Status', border: OutlineInputBorder()),
                         items: ['Pending', 'Completed', 'Payment Promised', 'Payment Received', 'Customer Not Responding', 'Dispute', 'Postponed', 'Cancelled']
@@ -937,6 +997,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     const SizedBox(width: 10),
                     Expanded(
                       child: DropdownButtonFormField<String>(
+                        isExpanded: true,
                         value: selectedPriority,
                         decoration: const InputDecoration(labelText: 'Priority', border: OutlineInputBorder()),
                         items: ['Low', 'Medium', 'High', 'Urgent']
@@ -1151,6 +1212,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   void _showToast(String msg) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
@@ -1181,19 +1243,56 @@ class _DashboardScreenState extends State<DashboardScreen>
               ),
             ),
             const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(widget.user.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                Text(
-                  'Salesman Code: ${widget.user.salesmanCode ?? 'N/A'}',
-                  style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
-                ),
-              ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          widget.user.name,
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (widget.user.isAdmin) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryIndigo,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text('ADMIN', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ],
+                  ),
+                  Text(
+                    widget.user.isAdmin
+                        ? 'All Accounts · Manager View'
+                        : 'Code: ${widget.user.salesmanCode ?? 'N/A'}',
+                    style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
         actions: [
+          if (widget.user.isAdmin)
+            IconButton(
+              icon: const Icon(Icons.shield_outlined, color: AppColors.primaryIndigo),
+              tooltip: 'Manager Cockpit (Admin Only)',
+              onPressed: () {
+                HapticFeedback.selectionClick();
+                Navigator.push(
+                  context,
+                  SmoothPageRoute(page: ManagerCockpitScreen(user: widget.user)),
+                );
+              },
+            ),
           IconButton(
             icon: const Icon(Icons.refresh, color: AppColors.primaryIndigo),
             onPressed: _fetchDashboardData,
@@ -1219,6 +1318,75 @@ class _DashboardScreenState extends State<DashboardScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // ADMIN ONLY: Manager Cockpit Quick Exception Banner
+                    if (widget.user.isAdmin) ...[
+                      InkWell(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          Navigator.push(
+                            context,
+                            SmoothPageRoute(page: ManagerCockpitScreen(user: widget.user)),
+                          );
+                        },
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [AppColors.primaryIndigo, Color(0xFF3730A3)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.primaryIndigo.withOpacity(0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.18),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.shield_outlined, color: Colors.white, size: 20),
+                              ),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          'Manager Cockpit',
+                                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                                        ),
+                                        SizedBox(width: 6),
+                                        Text('• ADMIN', style: TextStyle(color: Color(0xFFA5B4FC), fontSize: 10, fontWeight: FontWeight.bold)),
+                                      ],
+                                    ),
+                                    SizedBox(height: 2),
+                                    Text(
+                                      'Management by exception: broken commitments & SLA escalations',
+                                      style: TextStyle(color: Color(0xFFE0E7FF), fontSize: 11),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white70, size: 14),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
                     // 1. Dual Metric Summary Cards
                     Row(
                       children: [
@@ -1256,7 +1424,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                           const SizedBox(width: 8),
                           _buildCategoryChip(2, 'Recent Collections', Icons.receipt_long, (_totalCollectionsCount > 0 ? _totalCollectionsCount : _recentCollections.length).toString()),
                           const SizedBox(width: 8),
-                          _buildCategoryChip(4, 'Salesman Breakdown', Icons.badge_outlined, _salesmanWiseSummary.isNotEmpty ? _salesmanWiseSummary.length.toString() : ''),
+                          _buildCategoryChip(3, 'Overdue Dues', Icons.warning_amber_rounded, _overdueInvoices.length.toString()),
+                          const SizedBox(width: 8),
+                          if (widget.user.isAdmin)
+                            _buildCategoryChip(4, 'Salesman Breakdown', Icons.badge_outlined, _salesmanWiseSummary.isNotEmpty ? _salesmanWiseSummary.length.toString() : ''),
                         ],
                       ),
                     ),
@@ -1302,6 +1473,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                           const SizedBox(width: 6),
                           Expanded(
                             child: DropdownButtonFormField<String>(
+                        isExpanded: true,
                               value: _selectedSalesmanCode.isEmpty ? '' : _selectedSalesmanCode,
                               isDense: true,
                               decoration: InputDecoration(
@@ -1942,8 +2114,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<String>(
-                        value: selectedType,
                         isExpanded: true,
+                        value: selectedType,
                         decoration: const InputDecoration(
                           labelText: 'Follow-up Type',
                           border: OutlineInputBorder(),
@@ -1957,8 +2129,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                     const SizedBox(width: 8),
                     Expanded(
                       child: DropdownButtonFormField<String>(
-                        value: selectedStatus,
                         isExpanded: true,
+                        value: selectedStatus,
                         decoration: const InputDecoration(
                           labelText: 'Status',
                           border: OutlineInputBorder(),
@@ -2089,6 +2261,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     const SizedBox(width: 10),
                     Expanded(
                       child: DropdownButtonFormField<String>(
+                        isExpanded: true,
                         value: selectedPriority,
                         decoration: const InputDecoration(
                           labelText: 'Priority',
@@ -2123,6 +2296,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryIndigo),
                     onPressed: () async {
+                      if (nextFollowupDate == null && selectedStatus != 'Completed' && selectedStatus != 'Payment Received') {
+                        _showToast('⚠️ Mandatory: Select Next Follow-up Date before saving');
+                        return;
+                      }
                       try {
                         final payload = {
                           'customer_id': customerId,
@@ -2164,7 +2341,8 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Widget _buildTaskCard(DailyTask task) {
-    return Card(
+    return RepaintBoundary(
+      child: Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -2393,7 +2571,8 @@ class _DashboardScreenState extends State<DashboardScreen>
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 
   void _showCollectModalForTask(DailyTask task) {
@@ -2447,6 +2626,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
+              isExpanded: true,
               value: selectedMode,
               decoration: const InputDecoration(
                 labelText: 'Payment Mode',

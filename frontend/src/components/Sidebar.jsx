@@ -11,6 +11,7 @@ import {
   Database,
   BarChart3,
   UserCog,
+  ShieldAlert,
   Settings as SettingsIcon,
 } from 'lucide-react';
 
@@ -20,6 +21,7 @@ export default function Sidebar() {
   const navItems = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     ...(isAdmin ? [{ name: 'Salesman-Wise Dashboard', path: '/salesmen-dashboard', icon: Users }] : []),
+    ...(isAdmin ? [{ name: 'Manager Cockpit', path: '/manager-cockpit', icon: ShieldAlert }] : []),
     { name: 'My Customers', path: '/customers', icon: Users },
     { name: 'Invoice Outstanding', path: '/invoices', icon: FileText },
     { name: 'My Daily Tasks', path: '/daily-tasks', icon: CalendarCheck },

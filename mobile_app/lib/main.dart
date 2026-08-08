@@ -48,6 +48,21 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   Future<void> _checkExistingToken() async {
     final prefs = await SharedPreferences.getInstance();
+    const String currentVersion = '1.0.0';
+    final savedVersion = prefs.getString('app_version');
+
+    // Detect App Update Scenario
+    if (savedVersion != null && savedVersion != currentVersion) {
+      debugPrint('[App Update detected] Migrating from $savedVersion to $currentVersion');
+      // Force token re-sync upon dashboard mount
+      await prefs.remove('fcm_permission_asked');
+      // Save new version
+      await prefs.setString('app_version', currentVersion);
+    } else if (savedVersion == null) {
+      // Fresh install scenario
+      await prefs.setString('app_version', currentVersion);
+    }
+
     final token = prefs.getString('token');
 
     if (token != null && token.isNotEmpty) {
@@ -58,14 +73,21 @@ class _AuthWrapperState extends State<AuthWrapper> {
             _user = User.fromJson(res['user']);
           });
         } else {
+          // Token invalid, clear all but keep version
+          final version = prefs.getString('app_version');
           await prefs.clear();
+          if (version != null) await prefs.setString('app_version', version);
         }
       } catch (e) {
-        // Token expired, invalid or revoked
+        // Network failure or token expired
+        final version = prefs.getString('app_version');
         await prefs.clear();
+        if (version != null) await prefs.setString('app_version', version);
       }
     } else {
+      final version = prefs.getString('app_version');
       await prefs.clear();
+      if (version != null) await prefs.setString('app_version', version);
     }
 
     setState(() => _checkingAuth = false);

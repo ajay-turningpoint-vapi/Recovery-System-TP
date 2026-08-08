@@ -199,9 +199,28 @@ async function updateUser(req, res, next) {
   }
 }
 
+async function updatePushToken(req, res, next) {
+  try {
+    const { fcm_token } = req.body;
+    if (!fcm_token) {
+      return res.status(400).json({ success: false, message: 'fcm_token is required' });
+    }
+
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: { fcm_token },
+    });
+
+    res.json({ success: true, message: 'FCM Push Token updated successfully' });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getUsers,
   getSalesmen,
   createUser,
   updateUser,
+  updatePushToken,
 };

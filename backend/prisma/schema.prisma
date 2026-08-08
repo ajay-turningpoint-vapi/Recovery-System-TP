@@ -19,6 +19,7 @@ model User {
   salesman_code String?
   mobile        String?
   email         String?
+  fcm_token     String?       @db.Text
   status        String        @default("ACTIVE")
   created_at    DateTime      @default(now())
   updated_at    DateTime      @updatedAt
@@ -69,6 +70,9 @@ model Customer {
   credit_limit     Float         @default(0)
   credit_days      Int           @default(0)
   status           String        @default("ACTIVE")
+  current_status   String        @default("CURRENT") // CURRENT, DUE_TOMORROW, DUE_TODAY, OVERDUE_1_7, OVERDUE_8_30, PROMISE_DUE, BROKEN_PROMISE, DISPUTE, LEGAL_REVIEW, CLOSED
+  escalation_level String        @default("L0")      // L0, L1, L2, L3, L4
+  rcs_score        Float         @default(100)       // 0 to 100 Recovery Commitment Score
   created_at       DateTime      @default(now())
   updated_at       DateTime      @updatedAt
 
@@ -76,12 +80,15 @@ model Customer {
   payments     Payment[]
   followups    Followup[]
   whatsappLogs WhatsappLog[]
+  promiseLogs  PromiseLog[]
 
   @@index([customer_code])
   @@index([customer_name])
   @@index([salesman_code])
   @@index([mobile])
   @@index([status])
+  @@index([current_status])
+  @@index([escalation_level])
   @@map("customers")
 }
 
@@ -169,14 +176,19 @@ model Followup {
   next_followup_date     DateTime?
   next_followup_time     String?
   priority               String    @default("Medium") // Low, Medium, High, Urgent
+  outcome                String?   @default("ANSWERED") // ANSWERED, NO_ANSWER, SWITCHED_OFF, BUSY
+  spoke_with             String?
+  reason_code_id         Int?
+  channel                String?   @default("Phone Call") // Phone Call, WhatsApp, Visit, Email
   attachment             String?
   created_by             Int?
   created_at             DateTime  @default(now())
   updated_at             DateTime  @updatedAt
 
-  customer Customer @relation(fields: [customer_id], references: [id], onDelete: Cascade)
-  invoice  Invoice? @relation(fields: [invoice_id], references: [id], onDelete: SetNull)
-  user     User?    @relation(fields: [created_by], references: [id], onDelete: SetNull)
+  customer    Customer     @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+  invoice     Invoice?    @relation(fields: [invoice_id], references: [id], onDelete: SetNull)
+  user        User?       @relation(fields: [created_by], references: [id], onDelete: SetNull)
+  promiseLogs PromiseLog[]
 
   @@index([salesman_code])
   @@index([followup_date])
@@ -240,4 +252,37 @@ model WhatsappTemplate {
   updated_at DateTime @updatedAt
 
   @@map("whatsapp_templates")
+}
+
+model PromiseLog {
+  id              Int       @id @default(autoincrement())
+  customer_id     Int
+  followup_id     Int?
+  promised_amount Float
+  promised_date   DateTime
+  status          String    @default("PENDING") // PENDING, KEPT, BROKEN, PARTIAL
+  kept_amount     Float     @default(0)
+  broken_at       DateTime?
+  created_by      Int?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  customer Customer  @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+  followup Followup?  @relation(fields: [followup_id], references: [id], onDelete: SetNull)
+
+  @@index([customer_id])
+  @@index([promised_date])
+  @@index([status])
+  @@map("promise_logs")
+}
+
+model ReasonCode {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  category    String   // DISPUTE, DELAY, FINANCIAL, OPERATIONAL
+  label       String
+  description String?
+  created_at  DateTime @default(now())
+
+  @@map("reason_codes")
 }

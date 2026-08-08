@@ -1,4 +1,6 @@
 const prisma = require('../config/db');
+const { recalculateCustomerStatus } = require('../services/statusEngineService');
+const { calculateRCS } = require('../services/rcsCalculatorService');
 
 async function createFollowup(req, res, next) {
   try {
@@ -17,6 +19,10 @@ async function createFollowup(req, res, next) {
       next_followup_date,
       next_followup_time,
       priority = 'Medium',
+      outcome = 'ANSWERED',
+      spoke_with,
+      reason_code_id,
+      channel = 'Phone Call',
       attachment,
     } = req.body;
 
@@ -24,8 +30,9 @@ async function createFollowup(req, res, next) {
       return res.status(400).json({ success: false, message: 'Customer is required' });
     }
 
+    const customerIdInt = parseInt(customer_id, 10);
     const customer = await prisma.customer.findUnique({
-      where: { id: parseInt(customer_id, 10) },
+      where: { id: customerIdInt },
     });
 
     if (!customer) {
@@ -34,23 +41,30 @@ async function createFollowup(req, res, next) {
 
     const salesmanCode = (req.user.role === 'SALESMAN' ? req.user.salesman_code : customer.salesman_code) || 'UNASSIGNED';
 
+    const pDate = promise_to_pay_date || expected_payment_date;
+    const pAmt = promise_to_pay_amount || expected_payment_amount;
+
     const newFollowup = await prisma.followup.create({
       data: {
-        customer_id: parseInt(customer_id, 10),
+        customer_id: customerIdInt,
         invoice_id: invoice_id ? parseInt(invoice_id, 10) : null,
         salesman_code: salesmanCode,
         followup_date: followup_date ? new Date(followup_date) : new Date(),
         followup_time: followup_time || '10:00 AM',
         followup_type,
         status,
-        expected_payment_date: expected_payment_date ? new Date(expected_payment_date) : null,
-        expected_payment_amount: expected_payment_amount ? parseFloat(expected_payment_amount) : null,
-        promise_to_pay_date: promise_to_pay_date ? new Date(promise_to_pay_date) : null,
-        promise_to_pay_amount: promise_to_pay_amount ? parseFloat(promise_to_pay_amount) : null,
+        expected_payment_date: pDate ? new Date(pDate) : null,
+        expected_payment_amount: pAmt ? parseFloat(pAmt) : null,
+        promise_to_pay_date: pDate ? new Date(pDate) : null,
+        promise_to_pay_amount: pAmt ? parseFloat(pAmt) : null,
         remark: remark || '',
         next_followup_date: next_followup_date ? new Date(next_followup_date) : null,
         next_followup_time: next_followup_time || null,
         priority,
+        outcome,
+        spoke_with: spoke_with || null,
+        reason_code_id: reason_code_id ? parseInt(reason_code_id, 10) : null,
+        channel: channel || followup_type,
         attachment: attachment || null,
         created_by: req.user.id,
       },
@@ -58,6 +72,24 @@ async function createFollowup(req, res, next) {
         customer: { select: { customer_name: true, customer_code: true } }
       }
     });
+
+    // If promise details provided, create an immutable PromiseLog object
+    if (pDate && pAmt && parseFloat(pAmt) > 0) {
+      await prisma.promiseLog.create({
+        data: {
+          customer_id: customerIdInt,
+          followup_id: newFollowup.id,
+          promised_amount: parseFloat(pAmt),
+          promised_date: new Date(pDate),
+          status: 'PENDING',
+          created_by: req.user.id,
+        },
+      });
+    }
+
+    // Trigger Status Engine & RCS Score Recalculation asynchronously
+    recalculateCustomerStatus(customerIdInt).catch(console.error);
+    calculateRCS(customerIdInt).catch(console.error);
 
     res.status(201).json({
       success: true,
@@ -412,9 +444,21 @@ async function updateFollowup(req, res, next) {
   }
 }
 
+async function getReasonCodes(req, res, next) {
+  try {
+    const codes = await prisma.reasonCode.findMany({
+      orderBy: { label: 'asc' },
+    });
+    res.json({ success: true, data: codes });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   createFollowup,
   getFollowups,
   getDailyTasks,
   updateFollowup,
+  getReasonCodes,
 };
