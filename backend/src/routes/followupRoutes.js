@@ -13,6 +13,8 @@ router.use(authenticateToken);
 router.post('/', createFollowup);
 router.get('/', getFollowups);
 router.get('/today', getDailyTasks);
+router.get('/daily-tasks', getDailyTasks);
 router.put('/:id', updateFollowup);
+router.post('/:id', updateFollowup);
 
 module.exports = router;

@@ -1,5 +1,5 @@
 const prisma = require('../config/db');
-const { calculateDaysOverdue, formatOverdueLabel, determineInvoiceStatus } = require('../utils/calculations');
+const { calculateDaysOverdue, formatOverdueLabel, determineInvoiceStatus, formatHumanDuration } = require('../utils/calculations');
 
 async function getCustomers(req, res, next) {
   try {
@@ -9,7 +9,7 @@ async function getCustomers(req, res, next) {
     const { search, page = 1, limit = 50 } = req.query;
 
     const where = {};
-    if (salesmanCodeFilter) {
+    if (salesmanCodeFilter && salesmanCodeFilter !== 'ALL') {
       where.salesman_code = salesmanCodeFilter;
     }
 
@@ -22,8 +22,8 @@ async function getCustomers(req, res, next) {
       ];
     }
 
-    const pageNum = parseInt(page, 10);
-    const limitNum = parseInt(limit, 10);
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
 
     const [total, customers] = await Promise.all([
       prisma.customer.count({ where }),
@@ -33,7 +33,6 @@ async function getCustomers(req, res, next) {
         take: limitNum,
         include: {
           invoices: {
-            where: { outstanding_amount: { gt: 0 } },
             select: { outstanding_amount: true, due_date: true }
           }
         },
@@ -44,10 +43,13 @@ async function getCustomers(req, res, next) {
     const formatted = customers.map(cust => {
       let totalOutstanding = 0;
       let overdueAmount = 0;
+      let maxOverdueDays = 0;
       for (const inv of cust.invoices) {
         totalOutstanding += inv.outstanding_amount;
-        if (calculateDaysOverdue(inv.due_date) > 0) {
+        const daysOverdue = calculateDaysOverdue(inv.due_date);
+        if (daysOverdue > 0) {
           overdueAmount += inv.outstanding_amount;
+          if (daysOverdue > maxOverdueDays) maxOverdueDays = daysOverdue;
         }
       }
       return {
@@ -55,6 +57,8 @@ async function getCustomers(req, res, next) {
         invoices: undefined, // remove nested array in customer list summary
         total_outstanding: Math.round(totalOutstanding),
         overdue_amount: Math.round(overdueAmount),
+        max_overdue_days: maxOverdueDays,
+        max_overdue_label: formatHumanDuration(maxOverdueDays),
         invoice_count: cust.invoices.length,
       };
     });
@@ -77,6 +81,9 @@ async function getCustomers(req, res, next) {
 async function getCustomerById(req, res, next) {
   try {
     const customerId = parseInt(req.params.id, 10);
+    if (isNaN(customerId)) {
+      return res.status(400).json({ success: false, message: 'Invalid customer ID provided' });
+    }
 
     const customer = await prisma.customer.findUnique({
       where: { id: customerId },
@@ -84,6 +91,7 @@ async function getCustomerById(req, res, next) {
         invoices: {
           orderBy: { due_date: 'asc' },
           include: {
+            items: true,
             payments: { orderBy: { payment_date: 'desc' } },
             followups: { orderBy: { followup_date: 'desc' }, take: 1 }
           }
@@ -161,6 +169,7 @@ async function getCustomerById(req, res, next) {
         last_followup_date: lastFollowup ? lastFollowup.followup_date : null,
         next_followup_date: lastFollowup ? lastFollowup.next_followup_date : null,
         last_remark: lastFollowup ? lastFollowup.remark : 'N/A',
+        items: inv.items || [],
       };
     });
 
@@ -173,6 +182,7 @@ async function getCustomerById(req, res, next) {
       dueToday: Math.round(dueToday),
       upcomingDue: Math.round(upcomingDue),
       maxDaysOverdue,
+      maxDaysOverdueLabel: formatHumanDuration(maxDaysOverdue),
     };
 
     res.json({
@@ -188,7 +198,65 @@ async function getCustomerById(req, res, next) {
   }
 }
 
+async function getCustomerInvoiceItems(req, res, next) {
+  try {
+    const customerId = parseInt(req.params.id, 10);
+
+    const customer = await prisma.customer.findUnique({
+      where: { id: customerId }
+    });
+
+    if (!customer) {
+      return res.status(404).json({ success: false, message: 'Customer not found' });
+    }
+
+    const { queryPendingBillItems } = require('../services/mssqlService');
+    const result = await queryPendingBillItems(customer.customer_name);
+
+    res.json({
+      success: result.success,
+      customer_name: customer.customer_name,
+      customer_code: customer.customer_code,
+      count: result.records ? result.records.length : 0,
+      items: result.records || [],
+      message: result.message || 'Pending bill line items fetched from ERP'
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getCustomerPendingBills(req, res, next) {
+  try {
+    const customerId = parseInt(req.params.id, 10);
+
+    const customer = await prisma.customer.findUnique({
+      where: { id: customerId }
+    });
+
+    if (!customer) {
+      return res.status(404).json({ success: false, message: 'Customer not found' });
+    }
+
+    const { queryPendingBills } = require('../services/mssqlService');
+    const result = await queryPendingBills(customer.customer_name);
+
+    res.json({
+      success: result.success,
+      customer_name: customer.customer_name,
+      customer_code: customer.customer_code,
+      count: result.records ? result.records.length : 0,
+      pending_bills: result.records || [],
+      message: result.message || 'Pending bill references fetched from ERP'
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getCustomers,
   getCustomerById,
+  getCustomerInvoiceItems,
+  getCustomerPendingBills,
 };

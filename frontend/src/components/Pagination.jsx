@@ -12,13 +12,13 @@ export default function Pagination({ pagination, onPageChange }) {
       alignItems: 'center',
       justifyContent: 'space-between',
       padding: '1rem 0',
-      borderTop: '1px solid #334155',
+      borderTop: '1px solid #e2e8f0',
       marginTop: '1rem',
       fontSize: '0.875rem',
-      color: '#94a3b8'
+      color: '#64748b'
     }}>
       <div>
-        Showing page <strong style={{ color: '#f8fafc' }}>{currentPage}</strong> of <strong style={{ color: '#f8fafc' }}>{totalPages}</strong> ({totalRecords} total items)
+        Showing page <strong style={{ color: '#0f172a' }}>{currentPage}</strong> of <strong style={{ color: '#0f172a' }}>{totalPages}</strong> ({totalRecords} total items)
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -30,10 +30,12 @@ export default function Pagination({ pagination, onPageChange }) {
             alignItems: 'center',
             gap: '0.25rem',
             padding: '0.4rem 0.75rem',
-            backgroundColor: currentPage <= 1 ? '#1e293b' : '#334155',
-            color: currentPage <= 1 ? '#64748b' : '#f8fafc',
+            backgroundColor: currentPage <= 1 ? '#f1f5f9' : '#ffffff',
+            color: currentPage <= 1 ? '#94a3b8' : '#0f172a',
+            border: '1px solid #cbd5e1',
             borderRadius: '6px',
-            cursor: currentPage <= 1 ? 'not-allowed' : 'pointer'
+            cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
+            fontWeight: 600
           }}
         >
           <ChevronLeft size={16} /> Previous
@@ -47,10 +49,12 @@ export default function Pagination({ pagination, onPageChange }) {
             alignItems: 'center',
             gap: '0.25rem',
             padding: '0.4rem 0.75rem',
-            backgroundColor: currentPage >= totalPages ? '#1e293b' : '#334155',
-            color: currentPage >= totalPages ? '#64748b' : '#f8fafc',
+            backgroundColor: currentPage >= totalPages ? '#f1f5f9' : '#ffffff',
+            color: currentPage >= totalPages ? '#94a3b8' : '#0f172a',
+            border: '1px solid #cbd5e1',
             borderRadius: '6px',
-            cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer'
+            cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
+            fontWeight: 600
           }}
         >
           Next <ChevronRight size={16} />

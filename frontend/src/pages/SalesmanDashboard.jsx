@@ -1,9 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import SummaryCard from '../components/SummaryCard';
-import StatusBadge from '../components/StatusBadge';
-import Pagination from '../components/Pagination';
 import FollowupModal from '../components/FollowupModal';
 import PaymentModal from '../components/PaymentModal';
 import WhatsappModal from '../components/WhatsappModal';
@@ -15,359 +12,360 @@ import {
   AlertTriangle,
   Clock,
   CalendarCheck,
-  Search,
-  Filter,
-  ArrowUpDown,
-  MessageSquare,
-  PlusCircle,
-  Eye,
-  CreditCard
+  TrendingUp
 } from 'lucide-react';
 import api from '../services/api';
 
+// ─── Optimized Overdue Line Chart Component ──────────────────────────────────
+function OverdueLineChart({ data, isSalesman }) {
+  const [hoveredIdx, setHoveredIdx] = useState(null);
+
+  if (!data || data.length === 0) return null;
+
+  const maxOverdue = Math.max(...data.map(d => d.overdue_amount), 1);
+  const CHART_HEIGHT = 280;
+  const PADDING_LEFT = 80;
+  const PADDING_RIGHT = 80;
+  const PADDING_BOTTOM = 75;
+  const PADDING_TOP = 50;
+
+  // Fixed minimum width per salesman to guarantee clear spacing and prevent shrinking
+  const MIN_STEP_X = 140; // 140px dedicated width per salesman
+  const calculatedWidth = PADDING_LEFT + (data.length - 1) * MIN_STEP_X + PADDING_RIGHT;
+
+  // For single salesman (or very few), use at least 650px container width
+  const svgWidth = isSalesman || data.length === 1
+    ? 650
+    : Math.max(calculatedWidth, 800);
+
+  const totalHeight = CHART_HEIGHT + PADDING_TOP + PADDING_BOTTOM;
+
+  const fmtINR = (v) => `₹${Number(v).toLocaleString('en-IN')}`;
+
+  // Y-axis grid ticks
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(r => Math.round(maxOverdue * r));
+
+  // Compute exact point coordinates
+  const points = data.map((s, i) => {
+    const x = isSalesman || data.length === 1
+      ? PADDING_LEFT + (svgWidth - PADDING_LEFT - PADDING_RIGHT) / 2
+      : PADDING_LEFT + i * MIN_STEP_X;
+    const y = PADDING_TOP + CHART_HEIGHT - (s.overdue_amount / maxOverdue) * CHART_HEIGHT;
+    return { x, y, val: s.overdue_amount, name: s.name, code: s.salesman_code, raw: s };
+  });
+
+  // Generate smooth SVG Bezier curve path
+  const getSmoothPath = (pts) => {
+    if (pts.length === 0) return '';
+    if (pts.length === 1) return `M ${pts[0].x - 50} ${pts[0].y} L ${pts[0].x + 50} ${pts[0].y}`;
+
+    let d = `M ${pts[0].x} ${pts[0].y}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i];
+      const p1 = pts[i + 1];
+      const cx = (p0.x + p1.x) / 2;
+      d += ` C ${cx} ${p0.y}, ${cx} ${p1.y}, ${p1.x} ${p1.y}`;
+    }
+    return d;
+  };
+
+  const lineD = getSmoothPath(points);
+  const areaD = points.length === 1
+    ? ''
+    : `${lineD} L ${points[points.length - 1].x} ${PADDING_TOP + CHART_HEIGHT} L ${points[0].x} ${PADDING_TOP + CHART_HEIGHT} Z`;
+
+  return (
+    <div style={{
+      overflowX: 'auto',
+      width: '100%',
+      backgroundColor: '#ffffff',
+      borderRadius: '12px',
+      border: '1px solid #f1f5f9',
+      paddingBottom: '0.75rem'
+    }}>
+      <svg
+        width={svgWidth}
+        height={totalHeight}
+        style={{ display: 'block', fontFamily: 'Inter, system-ui, sans-serif', minWidth: `${svgWidth}px` }}
+      >
+        <defs>
+          <linearGradient id="optAreaGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#ef4444" stopOpacity="0.28" />
+            <stop offset="70%" stopColor="#ef4444" stopOpacity="0.05" />
+            <stop offset="100%" stopColor="#ef4444" stopOpacity="0.0" />
+          </linearGradient>
+
+          <linearGradient id="optLineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#f97316" />
+            <stop offset="50%" stopColor="#ef4444" />
+            <stop offset="100%" stopColor="#b91c1c" />
+          </linearGradient>
+
+          <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feComposite in="SourceGraphic" in2="blur" operator="over" />
+          </filter>
+        </defs>
+
+        {/* Horizontal Y-Axis Grid Lines */}
+        {ticks.map((tick, idx) => {
+          const y = PADDING_TOP + CHART_HEIGHT - (tick / maxOverdue) * CHART_HEIGHT;
+          return (
+            <g key={idx}>
+              <line
+                x1={PADDING_LEFT}
+                y1={y}
+                x2={svgWidth - PADDING_RIGHT}
+                y2={y}
+                stroke={idx === 0 ? '#cbd5e1' : '#f1f5f9'}
+                strokeWidth={idx === 0 ? '1.5' : '1'}
+                strokeDasharray={idx === 0 ? 'none' : '4 4'}
+              />
+              <text
+                x={PADDING_LEFT - 14}
+                y={y + 4}
+                textAnchor="end"
+                fontSize="12"
+                fill="#64748b"
+                fontWeight="600"
+              >
+                {tick >= 100000 ? `₹${(tick / 100000).toFixed(1)}L` : tick >= 1000 ? `₹${(tick / 1000).toFixed(0)}k` : `₹${tick}`}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Gradient Area under curve */}
+        {areaD && <path d={areaD} fill="url(#optAreaGrad)" />}
+
+        {/* Smooth Curved Line */}
+        <path
+          d={lineD}
+          fill="none"
+          stroke="url(#optLineGrad)"
+          strokeWidth="3.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          filter="url(#glow)"
+        />
+
+        {/* Active Hover Column Highlighter */}
+        {hoveredIdx !== null && points[hoveredIdx] && (
+          <g>
+            <line
+              x1={points[hoveredIdx].x}
+              y1={PADDING_TOP}
+              x2={points[hoveredIdx].x}
+              y2={PADDING_TOP + CHART_HEIGHT}
+              stroke="#ef4444"
+              strokeWidth="1.5"
+              strokeDasharray="3 3"
+              opacity="0.6"
+            />
+          </g>
+        )}
+
+        {/* Interactive Data Points & Labels */}
+        {points.map((p, idx) => {
+          const isHovered = hoveredIdx === idx;
+          const fullName = p.name || p.code;
+
+          return (
+            <g
+              key={idx}
+              onMouseEnter={() => setHoveredIdx(idx)}
+              onMouseLeave={() => setHoveredIdx(null)}
+              style={{ cursor: 'pointer' }}
+            >
+              {/* Value Pill Badge */}
+              <g transform={`translate(${p.x}, ${p.y - 20})`}>
+                <rect
+                  x="-46"
+                  y="-14"
+                  width="92"
+                  height="24"
+                  rx="6"
+                  fill={isHovered ? '#dc2626' : '#ffffff'}
+                  stroke={isHovered ? '#dc2626' : '#fca5a5'}
+                  strokeWidth="1.5"
+                  style={{ transition: 'all 0.2s ease' }}
+                />
+                <text
+                  x="0"
+                  y="2"
+                  textAnchor="middle"
+                  fontSize="12"
+                  fontWeight="800"
+                  fill={isHovered ? '#ffffff' : '#dc2626'}
+                  style={{ transition: 'all 0.2s ease' }}
+                >
+                  {fmtINR(p.val)}
+                </text>
+              </g>
+
+              {/* Point Node Circle */}
+              <circle
+                cx={p.x}
+                cy={p.y}
+                r={isHovered ? '8.5' : '6'}
+                fill={isHovered ? '#dc2626' : '#ffffff'}
+                stroke="#dc2626"
+                strokeWidth={isHovered ? '3' : '2.5'}
+                style={{ transition: 'all 0.2s ease' }}
+              />
+
+              {/* Invisible Hitbox for smooth hover */}
+              <rect
+                x={p.x - MIN_STEP_X / 2}
+                y={PADDING_TOP}
+                width={MIN_STEP_X}
+                height={CHART_HEIGHT + PADDING_BOTTOM}
+                fill="transparent"
+              />
+
+              {/* Clean X-Axis Salesman Name */}
+              <text
+                x={p.x}
+                y={PADDING_TOP + CHART_HEIGHT + 28}
+                textAnchor="middle"
+                fontSize="13"
+                fontWeight={isHovered ? '800' : '600'}
+                fill={isHovered ? '#dc2626' : '#1e293b'}
+                style={{ transition: 'all 0.2s ease' }}
+              >
+                {fullName}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+// ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function SalesmanDashboard() {
   const { user } = useAuth();
-  const navigate = useNavigate();
+  const isSalesman = user?.role === 'SALESMAN';
 
   const [summary, setSummary] = useState(null);
-  const [customers, setCustomers] = useState([]);
-  const [pagination, setPagination] = useState(null);
-
+  const [salesmanData, setSalesmanData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [filterType, setFilterType] = useState('ALL'); // ALL, OVERDUE, DUE_TODAY, HAS_OUTSTANDING
-  const [sortBy, setSortBy] = useState('highest_outstanding');
-  const [page, setPage] = useState(1);
 
-  // Active Modals state
+  // Modals (kept for compatibility)
   const [activeFollowupCustomer, setActiveFollowupCustomer] = useState(null);
   const [activePaymentCustomer, setActivePaymentCustomer] = useState(null);
   const [activeWhatsappCustomer, setActiveWhatsappCustomer] = useState(null);
 
-  const fetchDashboardData = async () => {
-    setLoading(true);
-    try {
-      const [sumRes, custRes] = await Promise.all([
-        api.get('/dashboard/summary'),
-        api.get('/dashboard/customers', {
-          params: {
-            search,
-            filterType: filterType === 'ALL' ? undefined : filterType,
-            sortBy,
-            page,
-            limit: 15
-          }
-        })
-      ]);
-
-      if (sumRes.data.success) {
-        setSummary(sumRes.data.data);
-      }
-      if (custRes.data.success) {
-        setCustomers(custRes.data.data);
-        setPagination(custRes.data.pagination);
-      }
-    } catch (err) {
-      console.error('Error fetching dashboard:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchDashboardData();
-  }, [search, filterType, sortBy, page]);
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const [sumRes, salesmanRes] = await Promise.all([
+          api.get('/dashboard/summary'),
+          api.get('/dashboard/salesman-wise'),
+        ]);
+        if (sumRes.data.success) setSummary(sumRes.data.data);
+        if (salesmanRes.data.success) setSalesmanData(salesmanRes.data.data || []);
+      } catch (err) {
+        console.error('Error fetching dashboard:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  const fmtINR = (v) => `₹${Number(v || 0).toLocaleString('en-IN')}`;
+
+  // Filter & sort data
+  const chartData = isSalesman
+    ? salesmanData.filter(s => s.salesman_code === user.salesman_code)
+    : [...salesmanData].sort((a, b) => b.overdue_amount - a.overdue_amount);
 
   return (
     <div className="animate-fade-in">
-      {/* 1. Summary Cards Header */}
+
+      {/* ── 1. Summary Cards ─────────────────────────────────────────────── */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
         gap: '1rem',
         marginBottom: '1.5rem'
       }}>
-        <SummaryCard
-          title="Total Customers"
-          value={summary?.totalCustomers || 0}
-          icon={Users}
-          color="#38bdf8"
-          subtitle="Assigned Customers"
-        />
-        <SummaryCard
-          title="Total Invoices"
-          value={summary?.totalOutstandingInvoices || 0}
-          icon={FileText}
-          color="#6366f1"
-          subtitle="Unpaid Invoices"
-        />
-        <SummaryCard
-          title="Total Outstanding"
-          value={`₹${(summary?.totalOutstandingAmount || 0).toLocaleString('en-IN')}`}
-          icon={DollarSign}
-          color="#8b5cf6"
-          subtitle="Consolidated Customer Due"
-        />
-        <SummaryCard
-          title="Overdue Amount"
-          value={`₹${(summary?.overdueAmount || 0).toLocaleString('en-IN')}`}
-          icon={AlertTriangle}
-          color="#f43f5e"
-          subtitle="Passed Due Date"
-        />
-        <SummaryCard
-          title="Due Today"
-          value={`₹${(summary?.dueTodayAmount || 0).toLocaleString('en-IN')}`}
-          icon={Clock}
-          color="#f59e0b"
-          subtitle="Action Needed Today"
-        />
-        <SummaryCard
-          title="Upcoming Due"
-          value={`₹${(summary?.upcomingDueAmount || 0).toLocaleString('en-IN')}`}
-          icon={CalendarCheck}
-          color="#10b981"
-          subtitle="Future Payments"
-        />
-        <SummaryCard
-          title="Follow-ups Due Today"
-          value={summary?.followupsDueToday || 0}
-          icon={CalendarCheck}
-          color="#f43f5e"
-          subtitle="Scheduled Tasks"
-        />
-        <SummaryCard
-          title="Follow-ups Pending"
-          value={summary?.followupsPending || 0}
-          icon={Clock}
-          color="#a78bfa"
-          subtitle="Pending Follow-ups"
-        />
+        <SummaryCard title="Total Customers"        value={summary?.totalCustomers || 0}                             icon={Users}         color="#0284c7" subtitle="Assigned Customers"     />
+        <SummaryCard title="Total Invoices"         value={summary?.totalOutstandingInvoices || 0}                   icon={FileText}      color="#4f46e5" subtitle="Unpaid Invoices"        />
+        <SummaryCard title="Total Outstanding"      value={fmtINR(summary?.totalOutstandingAmount)}                  icon={DollarSign}    color="#7c3aed" subtitle="Consolidated Due"        />
+        <SummaryCard title="Overdue Amount"         value={fmtINR(summary?.overdueAmount)}                          icon={AlertTriangle} color="#dc2626" subtitle="Passed Due Date"        />
+        <SummaryCard title="Due Today"              value={fmtINR(summary?.dueTodayAmount)}                         icon={Clock}         color="#d97706" subtitle="Action Needed Today"    />
+        <SummaryCard title="Upcoming Due"           value={fmtINR(summary?.upcomingDueAmount)}                      icon={CalendarCheck} color="#059669" subtitle="Future Payments"        />
+        <SummaryCard title="Follow-ups Due Today"   value={summary?.followupsDueToday || 0}                         icon={CalendarCheck} color="#dc2626" subtitle="Scheduled Tasks"        />
+        <SummaryCard title="Follow-ups Pending"     value={summary?.followupsPending || 0}                          icon={Clock}         color="#7c3aed" subtitle="Pending Follow-ups"     />
       </div>
 
-      {/* 2. Customer List Header & Controls */}
+      {/* ── 2. Salesman Overdue Line Chart ──────────────────────────────── */}
       <div style={{
-        backgroundColor: '#1e293b',
-        border: '1px solid #334155',
-        borderRadius: '12px',
-        padding: '1.25rem',
-        marginBottom: '1.5rem'
+        backgroundColor: '#ffffff',
+        border: '1px solid #e2e8f0',
+        borderRadius: '14px',
+        padding: '1.5rem',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+        marginBottom: '1.5rem',
       }}>
-        <div style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '1rem',
-          marginBottom: '1.25rem'
-        }}>
+        {/* Card header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+          <div style={{
+            backgroundColor: '#fef2f2',
+            borderRadius: '10px',
+            padding: '0.6rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            <TrendingUp size={22} color="#dc2626" />
+          </div>
           <div>
-            <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#f8fafc' }}>
-              Consolidated Customer Outstanding List
+            <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+              {isSalesman ? 'My Overdue Trend' : 'Salesman-wise Overdue Line Chart'}
             </h2>
-            <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-              Real-time invoice dues, last remarks, and next follow-up dates
+            <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0 }}>
+              {isSalesman
+                ? 'Your total overdue amount passing payment due date'
+                : 'Salesmen overdue amounts sorted from highest to lowest'}
             </p>
           </div>
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.75rem' }}>
-            {/* Search Box */}
-            <div style={{ position: 'relative', width: '220px' }}>
-              <input
-                type="text"
-                placeholder="Search Customer, Code, Mobile..."
-                value={search}
-                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                style={{ width: '100%', paddingLeft: '2.2rem' }}
-              />
-              <Search size={16} color="#64748b" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)' }} />
-            </div>
-
-            {/* Quick Status Filter */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Filter size={16} color="#94a3b8" />
-              <select
-                value={filterType}
-                onChange={(e) => { setFilterType(e.target.value); setPage(1); }}
-              >
-                <option value="ALL">All Customers</option>
-                <option value="OVERDUE">Overdue Customers</option>
-                <option value="DUE_TODAY">Due Today Customers</option>
-                <option value="HAS_OUTSTANDING">Has Outstanding</option>
-              </select>
-            </div>
-
-            {/* Sorting Filter */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <ArrowUpDown size={16} color="#94a3b8" />
-              <select
-                value={sortBy}
-                onChange={(e) => { setSortBy(e.target.value); setPage(1); }}
-              >
-                <option value="highest_outstanding">Highest Outstanding</option>
-                <option value="oldest_due">Oldest Due Date</option>
-                <option value="customer_name">Customer Name (A-Z)</option>
-                <option value="next_followup_date">Next Follow-up Date</option>
-              </select>
+          {/* Legend */}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <div style={{ width: 14, height: 3, borderRadius: 2, backgroundColor: '#dc2626' }} />
+              <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>Overdue Amount</span>
             </div>
           </div>
         </div>
 
-        {/* 3. Consolidated Table */}
-        <div style={{ overflowX: 'auto' }}>
-          <table className="custom-table">
-            <thead>
-              <tr>
-                <th>Customer Name & Code</th>
-                <th>Mobile Number</th>
-                <th>Invoices</th>
-                <th>Total Outstanding</th>
-                <th>Overdue Amount</th>
-                <th>Oldest Due</th>
-                <th>Last Follow-up</th>
-                <th>Next Follow-up</th>
-                <th>Last Remark</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan="10" style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
-                    Loading customer outstanding records...
-                  </td>
-                </tr>
-              ) : customers.length === 0 ? (
-                <tr>
-                  <td colSpan="10" style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}>
-                    No matching customer records found.
-                  </td>
-                </tr>
-              ) : (
-                customers.map((cust) => (
-                  <tr key={cust.id}>
-                    <td>
-                      <button
-                        onClick={() => navigate(`/customers/${cust.id}`)}
-                        style={{
-                          background: 'transparent',
-                          textAlign: 'left',
-                          display: 'block'
-                        }}
-                      >
-                        <div style={{ fontWeight: 700, color: '#38bdf8', fontSize: '0.9rem' }}>
-                          {cust.customer_name}
-                        </div>
-                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                          Code: {cust.customer_code}
-                        </div>
-                      </button>
-                    </td>
-                    <td style={{ fontWeight: 500, color: '#f8fafc' }}>
-                      {cust.mobile || 'N/A'}
-                    </td>
-                    <td>
-                      <span style={{
-                        backgroundColor: '#334155',
-                        color: '#f8fafc',
-                        padding: '0.2rem 0.5rem',
-                        borderRadius: '4px',
-                        fontSize: '0.8rem',
-                        fontWeight: 600
-                      }}>
-                        {cust.total_invoices} Inv
-                      </span>
-                    </td>
-                    <td style={{ fontWeight: 800, color: cust.total_outstanding > 0 ? '#f8fafc' : '#34d399' }}>
-                      ₹{cust.total_outstanding.toLocaleString('en-IN')}
-                    </td>
-                    <td style={{ fontWeight: 700, color: cust.overdue_amount > 0 ? '#f43f5e' : '#94a3b8' }}>
-                      ₹{cust.overdue_amount.toLocaleString('en-IN')}
-                    </td>
-                    <td style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                      {cust.oldest_due_date ? new Date(cust.oldest_due_date).toLocaleDateString('en-IN') : 'N/A'}
-                    </td>
-                    <td style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                      {cust.last_followup_date ? new Date(cust.last_followup_date).toLocaleDateString('en-IN') : 'None'}
-                    </td>
-                    <td style={{ fontSize: '0.8rem', color: '#fbbf24', fontWeight: 600 }}>
-                      {cust.next_followup_date ? new Date(cust.next_followup_date).toLocaleDateString('en-IN') : 'Not Set'}
-                    </td>
-                    <td style={{ fontSize: '0.8rem', color: '#cbd5e1', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {cust.last_followup_remark || 'N/A'}
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                        {/* Open Customer Dashboard */}
-                        <button
-                          onClick={() => navigate(`/customers/${cust.id}`)}
-                          title="Open Customer Dashboard"
-                          style={{ backgroundColor: '#334155', color: '#38bdf8', padding: '0.375rem 0.5rem', borderRadius: '4px' }}
-                        >
-                          <Eye size={16} />
-                        </button>
-
-                        {/* Add Follow-up */}
-                        <button
-                          onClick={() => setActiveFollowupCustomer(cust)}
-                          title="Add Follow-up"
-                          style={{ backgroundColor: 'rgba(99, 102, 241, 0.2)', color: '#818cf8', padding: '0.375rem 0.5rem', borderRadius: '4px' }}
-                        >
-                          <PlusCircle size={16} />
-                        </button>
-
-                        {/* Collection Entry */}
-                        <button
-                          onClick={() => setActivePaymentCustomer(cust)}
-                          title="Record Collection"
-                          style={{ backgroundColor: 'rgba(16, 185, 129, 0.2)', color: '#34d399', padding: '0.375rem 0.5rem', borderRadius: '4px' }}
-                        >
-                          <CreditCard size={16} />
-                        </button>
-
-                        {/* WhatsApp Communication */}
-                        <button
-                          onClick={() => setActiveWhatsappCustomer(cust)}
-                          title="Send WhatsApp Reminder"
-                          style={{ backgroundColor: 'rgba(37, 211, 102, 0.2)', color: '#25D366', padding: '0.375rem 0.5rem', borderRadius: '4px' }}
-                        >
-                          <MessageSquare size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination Controls */}
-        <Pagination pagination={pagination} onPageChange={(p) => setPage(p)} />
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
+            Loading chart data...
+          </div>
+        ) : chartData.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
+            No overdue data available.
+          </div>
+        ) : (
+          <OverdueLineChart data={chartData} isSalesman={isSalesman} />
+        )}
       </div>
 
-      {/* Dynamic Action Modals */}
+      {/* ── Hidden Modals (kept for compatibility) ──────────────────────── */}
       {activeFollowupCustomer && (
-        <FollowupModal
-          customer={activeFollowupCustomer}
-          onClose={() => setActiveFollowupCustomer(null)}
-          onSuccess={() => fetchDashboardData()}
-        />
+        <FollowupModal customer={activeFollowupCustomer} onClose={() => setActiveFollowupCustomer(null)} onSuccess={() => {}} />
       )}
-
       {activePaymentCustomer && (
-        <PaymentModal
-          customer={activePaymentCustomer}
-          onClose={() => setActivePaymentCustomer(null)}
-          onSuccess={() => fetchDashboardData()}
-        />
+        <PaymentModal customer={activePaymentCustomer} onClose={() => setActivePaymentCustomer(null)} onSuccess={() => {}} />
       )}
-
       {activeWhatsappCustomer && (
-        <WhatsappModal
-          customer={activeWhatsappCustomer}
-          onClose={() => setActiveWhatsappCustomer(null)}
-        />
+        <WhatsappModal customer={activeWhatsappCustomer} onClose={() => setActiveWhatsappCustomer(null)} />
       )}
     </div>
   );

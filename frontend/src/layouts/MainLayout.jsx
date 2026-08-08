@@ -5,7 +5,7 @@ import Sidebar from '../components/Sidebar';
 
 export default function MainLayout({ pageTitle }) {
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#0f172a' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f8fafc' }}>
       <Sidebar />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <Header pageTitle={pageTitle} />

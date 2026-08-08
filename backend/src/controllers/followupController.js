@@ -32,7 +32,7 @@ async function createFollowup(req, res, next) {
       return res.status(404).json({ success: false, message: 'Customer not found' });
     }
 
-    const salesmanCode = req.user.role === 'SALESMAN' ? req.user.salesman_code : customer.salesman_code;
+    const salesmanCode = (req.user.role === 'SALESMAN' ? req.user.salesman_code : customer.salesman_code) || 'UNASSIGNED';
 
     const newFollowup = await prisma.followup.create({
       data: {
@@ -77,7 +77,7 @@ async function getFollowups(req, res, next) {
     const { customer_id, invoice_id, status, page = 1, limit = 50 } = req.query;
 
     const where = {};
-    if (salesmanCodeFilter) {
+    if (salesmanCodeFilter && salesmanCodeFilter !== 'ALL') {
       where.salesman_code = salesmanCodeFilter;
     }
     if (customer_id) {
@@ -131,11 +131,33 @@ async function getDailyTasks(req, res, next) {
     const isSalesman = req.user.role === 'SALESMAN';
     const salesmanCode = isSalesman ? req.user.salesman_code : req.query.salesman_code;
 
-    const { filter = 'TODAY', customDate } = req.query;
+    const { filter = 'TODAY', customDate, search, page = 1, limit = 50 } = req.query;
 
     const where = {};
-    if (salesmanCode) {
+    if (isSalesman) {
+      where.OR = [
+        { created_by: req.user.id },
+        { salesman_code: req.user.salesman_code }
+      ];
+    } else if (salesmanCode && salesmanCode !== 'ALL') {
       where.salesman_code = salesmanCode;
+    }
+
+    if (search) {
+      const s = search.trim();
+      const searchCondition = {
+        OR: [
+          { customer: { customer_name: { contains: s } } },
+          { customer: { customer_code: { contains: s } } },
+          { customer: { mobile: { contains: s } } },
+          { remark: { contains: s } }
+        ]
+      };
+      if (where.OR) {
+        where.AND = [searchCondition];
+      } else {
+        where.OR = searchCondition.OR;
+      }
     }
 
     const today = new Date();
@@ -144,86 +166,123 @@ async function getDailyTasks(req, res, next) {
     const todayEnd = new Date(today);
     todayEnd.setHours(23, 59, 59, 999);
 
+    const closedStatuses = ['Completed', 'Cancelled', 'Payment Received'];
+
+    const dateFilters = [];
     if (filter === 'TODAY') {
-      where.OR = [
-        {
-          followup_date: { gte: today, lte: todayEnd }
-        },
-        {
-          next_followup_date: { gte: today, lte: todayEnd }
-        }
-      ];
+      dateFilters.push({
+        OR: [
+          { followup_date: { gte: today, lte: todayEnd } },
+          {
+            next_followup_date: { gte: today, lte: todayEnd },
+            status: { notIn: closedStatuses }
+          }
+        ]
+      });
     } else if (filter === 'TOMORROW') {
       const tomorrowStart = new Date(today);
       tomorrowStart.setDate(tomorrowStart.getDate() + 1);
       const tomorrowEnd = new Date(tomorrowStart);
       tomorrowEnd.setHours(23, 59, 59, 999);
 
-      where.OR = [
-        { followup_date: { gte: tomorrowStart, lte: tomorrowEnd } },
-        { next_followup_date: { gte: tomorrowStart, lte: tomorrowEnd } }
-      ];
+      dateFilters.push({
+        OR: [
+          { followup_date: { gte: tomorrowStart, lte: tomorrowEnd } },
+          {
+            next_followup_date: { gte: tomorrowStart, lte: tomorrowEnd },
+            status: { notIn: closedStatuses }
+          }
+        ]
+      });
     } else if (filter === 'OVERDUE') {
-      where.OR = [
-        { followup_date: { lt: today }, status: { notIn: ['Completed', 'Cancelled', 'Payment Received'] } },
-        { next_followup_date: { lt: today }, status: { notIn: ['Completed', 'Cancelled', 'Payment Received'] } }
-      ];
+      where.status = { notIn: closedStatuses };
+      dateFilters.push({
+        OR: [
+          { followup_date: { lt: today } },
+          { next_followup_date: { lt: today } }
+        ]
+      });
     } else if (filter === 'THIS_WEEK') {
       const weekEnd = new Date(today);
       weekEnd.setDate(weekEnd.getDate() + 7);
-      where.followup_date = { gte: today, lte: weekEnd };
+      dateFilters.push({ followup_date: { gte: today, lte: weekEnd } });
     } else if (filter === 'CUSTOM' && customDate) {
       const cDate = new Date(customDate);
       cDate.setHours(0, 0, 0, 0);
       const cDateEnd = new Date(cDate);
       cDateEnd.setHours(23, 59, 59, 999);
-      where.followup_date = { gte: cDate, lte: cDateEnd };
+      dateFilters.push({
+        OR: [
+          { followup_date: { gte: cDate, lte: cDateEnd } },
+          { next_followup_date: { gte: cDate, lte: cDateEnd } }
+        ]
+      });
     } else if (filter === 'COMPLETED') {
-      where.status = 'Completed';
+      where.status = { in: ['Completed', 'Payment Received'] };
     } else if (filter === 'PENDING') {
-      where.status = 'Pending';
+      where.status = { notIn: closedStatuses };
     }
 
-    const tasks = await prisma.followup.findMany({
-      where,
-      include: {
-        customer: {
-          include: {
-            invoices: { where: { outstanding_amount: { gt: 0 } } },
-            followups: { orderBy: { followup_date: 'desc' }, take: 2 }
-          }
-        },
-        invoice: { select: { invoice_number: true, outstanding_amount: true } },
-        user: { select: { name: true } }
-      },
-      orderBy: { followup_date: 'asc' }
-    });
+    if (dateFilters.length > 0) {
+      if (where.AND) {
+        where.AND.push(...dateFilters);
+      } else {
+        where.AND = dateFilters;
+      }
+    }
 
-    const formattedTasks = tasks.map(t => {
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
+
+    const [totalRecords, explicitTasks] = await Promise.all([
+      prisma.followup.count({ where }),
+      prisma.followup.findMany({
+        where,
+        skip: (pageNum - 1) * limitNum,
+        take: limitNum,
+        include: {
+          customer: {
+            include: {
+              invoices: { where: { outstanding_amount: { gt: 0 } } },
+              followups: { orderBy: { followup_date: 'desc' }, take: 2 }
+            }
+          },
+          invoice: { select: { invoice_number: true, outstanding_amount: true } },
+          user: { select: { name: true } }
+        },
+        orderBy: { followup_date: 'asc' }
+      })
+    ]);
+
+    // Format explicit salesman/operator-logged tasks ONLY
+    const formattedExplicit = explicitTasks.map(t => {
       const cust = t.customer;
       let totalOutstanding = 0;
       let overdueAmount = 0;
-      for (const inv of cust.invoices) {
-        totalOutstanding += inv.outstanding_amount;
-        const diffDays = Math.floor((today.getTime() - new Date(inv.due_date).getTime()) / (1000 * 60 * 60 * 24));
-        if (diffDays > 0) {
-          overdueAmount += inv.outstanding_amount;
+      if (cust && cust.invoices) {
+        for (const inv of cust.invoices) {
+          totalOutstanding += inv.outstanding_amount;
+          const diffDays = Math.floor((today.getTime() - new Date(inv.due_date).getTime()) / (1000 * 60 * 60 * 24));
+          if (diffDays > 0) {
+            overdueAmount += inv.outstanding_amount;
+          }
         }
       }
 
-      const prevFollowup = cust.followups.length > 1 ? cust.followups[1] : null;
+      const prevFollowup = (cust && cust.followups && cust.followups.length > 1) ? cust.followups[1] : null;
 
       return {
         id: t.id,
+        source: 'OPERATOR_FOLLOWUP',
         followup_date: t.followup_date,
         followup_time: t.followup_time,
-        customer_id: cust.id,
-        customer_name: cust.customer_name,
-        customer_code: cust.customer_code,
-        mobile: cust.mobile,
+        customer_id: cust ? cust.id : null,
+        customer_name: cust ? cust.customer_name : 'Unknown Customer',
+        customer_code: cust ? cust.customer_code : '',
+        mobile: cust ? cust.mobile : '',
         total_outstanding: Math.round(totalOutstanding),
         overdue_amount: Math.round(overdueAmount),
-        invoice_count: cust.invoices.length,
+        invoice_count: cust && cust.invoices ? cust.invoices.length : 0,
         previous_followup_date: prevFollowup ? prevFollowup.followup_date : null,
         previous_remark: prevFollowup ? prevFollowup.remark : 'No previous remark',
         expected_payment_date: t.expected_payment_date,
@@ -239,19 +298,23 @@ async function getDailyTasks(req, res, next) {
 
     res.json({
       success: true,
-      tasks: formattedTasks,
+      tasks: formattedExplicit,
+      data: formattedExplicit,
+      pagination: {
+        totalRecords,
+        totalPages: Math.ceil(totalRecords / limitNum) || 1,
+        currentPage: pageNum,
+        limit: limitNum,
+      }
     });
   } catch (err) {
     next(err);
   }
 }
 
-/**
- * Quick Follow-up update / action from Daily Task modal
- */
 async function updateFollowup(req, res, next) {
   try {
-    const followupId = parseInt(req.params.id, 10);
+    const followupId = req.params.id;
     const {
       status,
       remark,
@@ -261,17 +324,48 @@ async function updateFollowup(req, res, next) {
       next_followup_time,
     } = req.body;
 
+    // If derived ID
+    if (String(followupId).startsWith('derived-')) {
+      const custId = parseInt(String(followupId).replace('derived-', ''), 10);
+      const cust = await prisma.customer.findUnique({ where: { id: custId } });
+      if (!cust) {
+        return res.status(404).json({ success: false, message: 'Customer not found' });
+      }
+
+      const created = await prisma.followup.create({
+        data: {
+          customer_id: custId,
+          salesman_code: cust.salesman_code || 'UNASSIGNED',
+          followup_date: new Date(),
+          followup_time: '10:00 AM',
+          followup_type: 'Phone Call',
+          status: status || 'Pending',
+          remark: remark || 'Followup logged',
+          expected_payment_amount: expected_payment_amount ? parseFloat(expected_payment_amount) : null,
+          expected_payment_date: expected_payment_date ? new Date(expected_payment_date) : null,
+          next_followup_date: next_followup_date ? new Date(next_followup_date) : null,
+          next_followup_time: next_followup_time || null,
+          created_by: req.user.id,
+        }
+      });
+
+      return res.json({
+        success: true,
+        message: 'Follow-up logged successfully',
+        followup: created,
+      });
+    }
+
     const existing = await prisma.followup.findUnique({
-      where: { id: followupId },
+      where: { id: parseInt(followupId, 10) },
     });
 
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Follow-up entry not found' });
     }
 
-    // 1. Update status and remarks on existing entry
     const updated = await prisma.followup.update({
-      where: { id: followupId },
+      where: { id: parseInt(followupId, 10) },
       data: {
         status: status || existing.status,
         remark: remark ? `${existing.remark ? existing.remark + ' | Update: ' : ''}${remark}` : existing.remark,
@@ -283,8 +377,14 @@ async function updateFollowup(req, res, next) {
       },
     });
 
-    // 2. If next_followup_date is provided and creating new task required
-    if (next_followup_date) {
+    // Only create a NEW scheduled followup row when:
+    // 1. A next_followup_date is given, AND
+    // 2. The current followup is being closed (Completed / Payment Received / Payment Promised / Cancelled)
+    // This prevents endless chaining when a salesman just updates a remark without closing.
+    const closingStatuses = ['Completed', 'Payment Received', 'Payment Promised', 'Cancelled'];
+    const isClosing = status && closingStatuses.includes(status);
+
+    if (next_followup_date && isClosing) {
       await prisma.followup.create({
         data: {
           customer_id: existing.customer_id,
@@ -296,7 +396,7 @@ async function updateFollowup(req, res, next) {
           status: 'Pending',
           expected_payment_date: expected_payment_date ? new Date(expected_payment_date) : null,
           expected_payment_amount: expected_payment_amount ? parseFloat(expected_payment_amount) : null,
-          remark: `Scheduled from follow-up ID #${existing.id}. Remark: ${remark || 'Next follow-up set'}`,
+          remark: `Scheduled follow-up. ${remark || ''}`.trim(),
           created_by: req.user.id,
         }
       });

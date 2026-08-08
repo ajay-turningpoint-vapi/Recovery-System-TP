@@ -35,17 +35,17 @@ export default function QuickFollowupModal({ task, onClose, onSuccess }) {
 
   return (
     <div className="modal-overlay">
-      <div className="modal-content animate-fade-in" style={{ padding: '1.5rem', maxWidth: '520px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid #334155', pb: '0.75rem' }}>
+      <div className="modal-content animate-fade-in" style={{ padding: '1.5rem', maxWidth: '520px', backgroundColor: '#ffffff', color: '#0f172a' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
           <div>
-            <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#f8fafc' }}>
+            <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a' }}>
               Quick Action Follow-Up
             </h2>
-            <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-              Customer: <strong style={{ color: '#38bdf8' }}>{task?.customer_name}</strong> ({task?.customer_code})
+            <p style={{ fontSize: '0.8rem', color: '#64748b' }}>
+              Customer: <strong style={{ color: '#0284c7' }}>{task?.customer_name}</strong> ({task?.customer_code})
             </p>
           </div>
-          <button onClick={onClose} style={{ background: 'transparent', color: '#94a3b8' }}>
+          <button onClick={onClose} style={{ background: 'transparent', color: '#64748b' }}>
             <X size={20} />
           </button>
         </div>
@@ -134,13 +134,22 @@ export default function QuickFollowupModal({ task, onClose, onSuccess }) {
               <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#94a3b8', display: 'block', marginBottom: '0.375rem' }}>
                 Next Follow-Up Time
               </label>
-              <input
-                type="text"
-                placeholder="11:00 AM"
+              <select
                 value={formData.next_followup_time}
                 onChange={(e) => setFormData({ ...formData, next_followup_time: e.target.value })}
                 style={{ width: '100%' }}
-              />
+              >
+                <option value="09:00 AM">9:00 AM</option>
+                <option value="10:00 AM">10:00 AM</option>
+                <option value="11:00 AM">11:00 AM</option>
+                <option value="12:00 PM">12:00 PM</option>
+                <option value="01:00 PM">1:00 PM</option>
+                <option value="02:00 PM">2:00 PM</option>
+                <option value="03:00 PM">3:00 PM</option>
+                <option value="04:00 PM">4:00 PM</option>
+                <option value="05:00 PM">5:00 PM</option>
+                <option value="06:00 PM">6:00 PM</option>
+              </select>
             </div>
           </div>
 

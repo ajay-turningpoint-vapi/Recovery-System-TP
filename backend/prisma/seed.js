@@ -399,19 +399,29 @@ async function main() {
   }
 
   // 7. MSSQL Default Config
+  // Note: The actual import SQL is built dynamically in mssqlService.js based on import mode.
+  const erpQuery = '';
+
   await prisma.mssqlConfig.upsert({
     where: { id: 1 },
-    update: {},
+    update: {
+      host: '192.168.1.11\\SQL2022',
+      port: 4096,
+      database_name: 'BusyComp0009_db12026',
+      username: 'sa',
+      password_encrypted: 'Busy@12345',
+      import_sql: erpQuery,
+    },
     create: {
       id: 1,
-      host: 'localhost',
-      port: 1433,
-      database_name: 'BUSY_ERP_DB',
+      host: '192.168.1.11\\SQL2022',
+      port: 4096,
+      database_name: 'BusyComp0009_db12026',
       username: 'sa',
-      password_encrypted: 'ERPSecretPass123',
+      password_encrypted: 'Busy@12345',
       encrypt: false,
       trust_server_certificate: true,
-      import_sql: `SELECT VOU_NO, VOUCHER_DATE, PARTY, ALIAS, ADDRESS, CITY, STATE, GSTIN, MOBILE, SALESMAN, ITEM_NAME, HSN, QTY, RATE, TAX, DISC, TOTAL_AMOUNT, DUE_DATE FROM VOUCHERS WHERE VOUCHER_DATE >= @startdate@ AND VOUCHER_DATE <= @enddate@`,
+      import_sql: erpQuery,
     }
   });
 

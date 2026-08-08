@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, User, Shield, Briefcase, Bell } from 'lucide-react';
+import { LogOut, Shield, Briefcase } from 'lucide-react';
 
 export default function Header({ pageTitle = 'Dashboard' }) {
   const { user, logout, isAdmin } = useAuth();
@@ -8,18 +8,19 @@ export default function Header({ pageTitle = 'Dashboard' }) {
   return (
     <header style={{
       height: '64px',
-      backgroundColor: '#1e293b',
-      borderBottom: '1px solid #334155',
+      backgroundColor: '#ffffff',
+      borderBottom: '1px solid #e2e8f0',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
       padding: '0 1.5rem',
       position: 'sticky',
       top: 0,
-      zIndex: 40
+      zIndex: 40,
+      boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.03)'
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#f8fafc' }}>
+        <h1 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em' }}>
           {pageTitle}
         </h1>
       </div>
@@ -29,22 +30,22 @@ export default function Header({ pageTitle = 'Dashboard' }) {
           display: 'flex',
           alignItems: 'center',
           gap: '0.75rem',
-          backgroundColor: '#0f172a',
+          backgroundColor: '#f8fafc',
           padding: '0.375rem 0.875rem',
           borderRadius: '9999px',
-          border: '1px solid #334155'
+          border: '1px solid #e2e8f0'
         }}>
           {isAdmin ? (
-            <Shield size={18} color="#6366f1" />
+            <Shield size={18} color="#4f46e5" />
           ) : (
-            <Briefcase size={18} color="#38bdf8" />
+            <Briefcase size={18} color="#0284c7" />
           )}
 
           <div>
-            <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#f8fafc', lineHeight: 1.2 }}>
+            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0f172a', lineHeight: 1.2 }}>
               {user?.name || 'User'}
             </div>
-            <div style={{ fontSize: '0.7rem', color: user?.role === 'ADMIN' ? '#818cf8' : '#38bdf8', fontWeight: 600 }}>
+            <div style={{ fontSize: '0.7rem', color: user?.role === 'ADMIN' ? '#4f46e5' : '#0284c7', fontWeight: 700 }}>
               {user?.role} {user?.salesman_code ? `(${user.salesman_code})` : ''}
             </div>
           </div>
@@ -57,13 +58,13 @@ export default function Header({ pageTitle = 'Dashboard' }) {
             display: 'flex',
             alignItems: 'center',
             gap: '0.5rem',
-            backgroundColor: 'rgba(244, 63, 94, 0.1)',
-            color: '#f43f5e',
-            border: '1px solid rgba(244, 63, 94, 0.3)',
+            backgroundColor: '#fff1f2',
+            color: '#e11d48',
+            border: '1px solid #fecdd3',
             padding: '0.5rem 0.875rem',
             borderRadius: '6px',
             fontSize: '0.875rem',
-            fontWeight: 600
+            fontWeight: 700
           }}
         >
           <LogOut size={16} />

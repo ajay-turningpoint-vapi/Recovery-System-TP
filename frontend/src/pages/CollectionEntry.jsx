@@ -3,7 +3,7 @@ import StatusBadge from '../components/StatusBadge';
 import Pagination from '../components/Pagination';
 import PaymentModal from '../components/PaymentModal';
 
-import { CreditCard, PlusCircle, Search, DollarSign, Calendar, CheckCircle } from 'lucide-react';
+import { CreditCard, PlusCircle } from 'lucide-react';
 import api from '../services/api';
 
 export default function CollectionEntry() {
@@ -54,11 +54,12 @@ export default function CollectionEntry() {
   return (
     <div className="animate-fade-in">
       <div style={{
-        backgroundColor: '#1e293b',
-        border: '1px solid #334155',
+        backgroundColor: '#ffffff',
+        border: '1px solid #e2e8f0',
         borderRadius: '12px',
         padding: '1.25rem',
-        marginBottom: '1.5rem'
+        marginBottom: '1.5rem',
+        boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05)'
       }}>
         <div style={{
           display: 'flex',
@@ -69,10 +70,10 @@ export default function CollectionEntry() {
           marginBottom: '1.25rem'
         }}>
           <div>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <CreditCard size={24} color="#10b981" /> Collection & Payment Entry
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <CreditCard size={24} color="#059669" /> Collection & Payment Entry
             </h2>
-            <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+            <p style={{ fontSize: '0.8rem', color: '#64748b' }}>
               Record customer payments, NEFT/RTGS/UPI receipts, and update outstanding balances
             </p>
           </div>
@@ -80,7 +81,7 @@ export default function CollectionEntry() {
           <button
             onClick={() => setShowPaymentModal(true)}
             style={{
-              backgroundColor: '#10b981',
+              backgroundColor: '#059669',
               color: '#ffffff',
               padding: '0.625rem 1.25rem',
               borderRadius: '8px',
@@ -88,7 +89,7 @@ export default function CollectionEntry() {
               display: 'flex',
               alignItems: 'center',
               gap: '0.5rem',
-              boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+              boxShadow: '0 4px 12px rgba(5, 150, 105, 0.25)'
             }}
           >
             <PlusCircle size={18} /> New Collection Entry
@@ -119,31 +120,31 @@ export default function CollectionEntry() {
                 </tr>
               ) : payments.length === 0 ? (
                 <tr>
-                  <td colSpan="9" style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}>
+                  <td colSpan="9" style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
                     No collection entries recorded yet.
                   </td>
                 </tr>
               ) : (
                 payments.map((p) => (
                   <tr key={p.id}>
-                    <td style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
+                    <td style={{ color: '#64748b', fontSize: '0.85rem' }}>
                       {new Date(p.payment_date).toLocaleDateString('en-IN')}
                     </td>
-                    <td style={{ fontWeight: 700, color: '#38bdf8' }}>
+                    <td style={{ fontWeight: 700, color: '#0284c7' }}>
                       {p.customer?.customer_name}
                       <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{p.customer?.customer_code}</div>
                     </td>
-                    <td style={{ fontWeight: 600, color: '#f8fafc' }}>
+                    <td style={{ fontWeight: 600, color: '#0f172a' }}>
                       {p.invoice?.invoice_number || 'Auto-Allocated Oldest Invoices'}
                     </td>
-                    <td style={{ fontWeight: 800, color: '#34d399', fontSize: '1rem' }}>
+                    <td style={{ fontWeight: 800, color: '#059669', fontSize: '1rem' }}>
                       ₹{p.amount.toLocaleString('en-IN')}
                     </td>
-                    <td style={{ fontWeight: 700, color: '#f8fafc' }}>{p.payment_mode}</td>
-                    <td style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>{p.reference_number || 'N/A'}</td>
-                    <td style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>{p.bank || 'N/A'}</td>
-                    <td style={{ color: '#94a3b8', fontSize: '0.85rem' }}>{p.remark || 'N/A'}</td>
-                    <td style={{ color: '#a78bfa', fontSize: '0.85rem', fontWeight: 600 }}>{p.user?.name || 'System'}</td>
+                    <td style={{ fontWeight: 700, color: '#0f172a' }}>{p.payment_mode}</td>
+                    <td style={{ color: '#475569', fontSize: '0.85rem' }}>{p.reference_number || 'N/A'}</td>
+                    <td style={{ color: '#475569', fontSize: '0.85rem' }}>{p.bank || 'N/A'}</td>
+                    <td style={{ color: '#64748b', fontSize: '0.85rem' }}>{p.remark || 'N/A'}</td>
+                    <td style={{ color: '#6d28d9', fontSize: '0.85rem', fontWeight: 700 }}>{p.user?.name || 'System'}</td>
                   </tr>
                 ))
               )}

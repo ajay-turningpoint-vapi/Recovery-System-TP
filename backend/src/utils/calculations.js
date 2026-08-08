@@ -30,12 +30,31 @@ function determineInvoiceStatus(dueDate, outstandingAmount) {
   }
 }
 
+function formatHumanDuration(diffDays) {
+  if (!diffDays || diffDays <= 0) return '0 Days';
+  if (diffDays < 30) {
+    return `${diffDays} ${diffDays === 1 ? 'Day' : 'Days'}`;
+  } else if (diffDays < 365) {
+    const months = Math.floor(diffDays / 30);
+    const remDays = diffDays % 30;
+    if (remDays >= 15) {
+      return `${months}.5 Months`;
+    }
+    return `${months} ${months === 1 ? 'Month' : 'Months'}`;
+  } else {
+    const years = (diffDays / 365).toFixed(1);
+    const cleanYears = years.endsWith('.0') ? years.slice(0, -2) : years;
+    return `${cleanYears} ${cleanYears === '1' ? 'Year' : 'Years'}`;
+  }
+}
+
 function formatOverdueLabel(dueDate, outstandingAmount) {
   if (outstandingAmount <= 0) return 'Paid';
   const diffDays = calculateDaysOverdue(dueDate);
   if (diffDays < 0) return 'Not Due';
   if (diffDays === 0) return 'Due Today';
-  return `${diffDays} Days Overdue`;
+  
+  return `${formatHumanDuration(diffDays)} Overdue`;
 }
 
 function getAgingBucket(daysOverdue) {
@@ -68,6 +87,7 @@ module.exports = {
   calculateDaysOverdue,
   determineInvoiceStatus,
   formatOverdueLabel,
+  formatHumanDuration,
   getAgingBucket,
   convertToCSV,
 };

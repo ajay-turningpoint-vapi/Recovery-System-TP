@@ -8,8 +8,12 @@ async function getInvoices(req, res, next) {
 
     const { search, status, page = 1, limit = 50 } = req.query;
 
-    const where = {};
-    if (salesmanCodeFilter) {
+    const where = {
+      NOT: {
+        invoice_number: { startsWith: 'OB-' }
+      }
+    };
+    if (salesmanCodeFilter && salesmanCodeFilter !== 'ALL') {
       where.salesman_code = salesmanCodeFilter;
     }
 
@@ -26,8 +30,8 @@ async function getInvoices(req, res, next) {
       ];
     }
 
-    const pageNum = parseInt(page, 10);
-    const limitNum = parseInt(limit, 10);
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
 
     const [total, invoices] = await Promise.all([
       prisma.invoice.count({ where }),
@@ -36,7 +40,18 @@ async function getInvoices(req, res, next) {
         skip: (pageNum - 1) * limitNum,
         take: limitNum,
         include: {
-          customer: { select: { id: true, customer_name: true, customer_code: true, mobile: true } }
+          customer: {
+            select: {
+              id: true,
+              customer_name: true,
+              customer_code: true,
+              mobile: true,
+              city: true,
+              state: true,
+              email: true,
+            }
+          },
+          items: true,
         },
         orderBy: { due_date: 'asc' }
       })
@@ -69,6 +84,9 @@ async function getInvoices(req, res, next) {
 async function getInvoiceById(req, res, next) {
   try {
     const invoiceId = parseInt(req.params.id, 10);
+    if (isNaN(invoiceId)) {
+      return res.status(400).json({ success: false, message: 'Invalid invoice ID provided' });
+    }
 
     const invoice = await prisma.invoice.findUnique({
       where: { id: invoiceId },

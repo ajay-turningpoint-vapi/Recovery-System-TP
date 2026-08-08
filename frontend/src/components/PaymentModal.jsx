@@ -37,17 +37,17 @@ export default function PaymentModal({ customer, invoice, onClose, onSuccess }) 
 
   return (
     <div className="modal-overlay">
-      <div className="modal-content animate-fade-in" style={{ padding: '1.5rem', maxWidth: '560px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid #334155', pb: '0.75rem' }}>
+      <div className="modal-content animate-fade-in" style={{ padding: '1.5rem', maxWidth: '560px', backgroundColor: '#ffffff', color: '#0f172a' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
           <div>
-            <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <CreditCard size={20} color="#10b981" /> Record Payment Collection
+            <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <CreditCard size={20} color="#059669" /> Record Payment Collection
             </h2>
-            <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-              Customer: <strong style={{ color: '#38bdf8' }}>{customer?.customer_name}</strong> {invoice ? `| Invoice: ${invoice.invoice_number}` : ''}
+            <p style={{ fontSize: '0.8rem', color: '#64748b' }}>
+              Customer: <strong style={{ color: '#0284c7' }}>{customer?.customer_name}</strong> {invoice ? `| Invoice: ${invoice.invoice_number}` : ''}
             </p>
           </div>
-          <button onClick={onClose} style={{ background: 'transparent', color: '#94a3b8' }}>
+          <button onClick={onClose} style={{ background: 'transparent', color: '#64748b' }}>
             <X size={20} />
           </button>
         </div>

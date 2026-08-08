@@ -127,10 +127,10 @@ async function getPayments(req, res, next) {
     const isSalesman = req.user.role === 'SALESMAN';
     const salesmanCodeFilter = isSalesman ? req.user.salesman_code : req.query.salesman_code;
 
-    const { customer_id, invoice_id, page = 1, limit = 50 } = req.query;
+    const { customer_id, invoice_id, search, page = 1, limit = 50 } = req.query;
 
     const where = {};
-    if (salesmanCodeFilter) {
+    if (salesmanCodeFilter && salesmanCodeFilter !== 'ALL') {
       where.customer = { salesman_code: salesmanCodeFilter };
     }
     if (customer_id) {
@@ -138,6 +138,15 @@ async function getPayments(req, res, next) {
     }
     if (invoice_id) {
       where.invoice_id = parseInt(invoice_id, 10);
+    }
+    if (search) {
+      const s = search.trim();
+      where.OR = [
+        { customer: { customer_name: { contains: s } } },
+        { customer: { customer_code: { contains: s } } },
+        { invoice: { invoice_number: { contains: s } } },
+        { reference_number: { contains: s } }
+      ];
     }
 
     const pageNum = parseInt(page, 10);

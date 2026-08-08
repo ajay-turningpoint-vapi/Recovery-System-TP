@@ -65,25 +65,26 @@ export default function WhatsappModule() {
   return (
     <div className="animate-fade-in">
       <div style={{
-        backgroundColor: '#1e293b',
-        border: '1px solid #334155',
+        backgroundColor: '#ffffff',
+        border: '1px solid #e2e8f0',
         borderRadius: '12px',
         padding: '1.25rem',
-        marginBottom: '1.5rem'
+        marginBottom: '1.5rem',
+        boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05)'
       }}>
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           marginBottom: '1.25rem',
-          borderBottom: '1px solid #334155',
+          borderBottom: '1px solid #e2e8f0',
           paddingBottom: '0.75rem'
         }}>
           <div>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <MessageSquare size={24} color="#25D366" /> WhatsApp Communication Hub
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <MessageSquare size={24} color="#16a34a" /> WhatsApp Communication Hub
             </h2>
-            <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+            <p style={{ fontSize: '0.8rem', color: '#64748b' }}>
               Audit sent reminders, manage automated templates, and inspect communication logs
             </p>
           </div>
@@ -92,171 +93,173 @@ export default function WhatsappModule() {
             <button
               onClick={() => setActiveTab('LOGS')}
               style={{
-                backgroundColor: activeTab === 'LOGS' ? '#25D366' : '#0f172a',
-                color: activeTab === 'LOGS' ? '#000000' : '#94a3b8',
-                border: '1px solid #334155',
+                backgroundColor: activeTab === 'LOGS' ? '#16a34a' : '#f1f5f9',
+                color: activeTab === 'LOGS' ? '#ffffff' : '#475569',
+                border: '1px solid #cbd5e1',
                 padding: '0.5rem 1rem',
                 borderRadius: '6px',
                 fontWeight: 700,
                 fontSize: '0.85rem'
               }}
             >
-              Activity Logs ({logs.length})
+              Communication Audit Trail
             </button>
             <button
               onClick={() => setActiveTab('TEMPLATES')}
               style={{
-                backgroundColor: activeTab === 'TEMPLATES' ? '#6366f1' : '#0f172a',
-                color: activeTab === 'TEMPLATES' ? '#ffffff' : '#94a3b8',
-                border: '1px solid #334155',
+                backgroundColor: activeTab === 'TEMPLATES' ? '#4f46e5' : '#f1f5f9',
+                color: activeTab === 'TEMPLATES' ? '#ffffff' : '#475569',
+                border: '1px solid #cbd5e1',
                 padding: '0.5rem 1rem',
                 borderRadius: '6px',
                 fontWeight: 700,
                 fontSize: '0.85rem'
               }}
             >
-              Message Templates ({templates.length})
+              WhatsApp Templates
             </button>
           </div>
         </div>
 
+        {/* Tab 1: Logs */}
         {activeTab === 'LOGS' && (
-          <div>
-            <div style={{ overflowX: 'auto' }}>
-              <table className="custom-table">
-                <thead>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="custom-table">
+              <thead>
+                <tr>
+                  <th>Sent Timestamp</th>
+                  <th>Customer Name & Code</th>
+                  <th>Recipient Mobile</th>
+                  <th>Template Code</th>
+                  <th>Message Body</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
                   <tr>
-                    <th>Date & Time</th>
-                    <th>Customer Name</th>
-                    <th>Mobile</th>
-                    <th>Dispatched Message</th>
-                    <th>Invoices Attached</th>
-                    <th>Dispatched By</th>
-                    <th>Status</th>
+                    <td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
+                      Loading WhatsApp logs...
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {loading ? (
-                    <tr>
-                      <td colSpan="7" style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
-                        Loading WhatsApp audit logs...
+                ) : logs.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
+                      No WhatsApp reminders sent yet.
+                    </td>
+                  </tr>
+                ) : (
+                  logs.map((log) => (
+                    <tr key={log.id}>
+                      <td style={{ color: '#64748b', fontSize: '0.8rem' }}>
+                        {new Date(log.sent_at).toLocaleString('en-IN')}
+                      </td>
+                      <td style={{ fontWeight: 700, color: '#0284c7' }}>
+                        {log.customer?.customer_name} ({log.customer?.customer_code})
+                      </td>
+                      <td style={{ fontWeight: 600, color: '#0f172a' }}>{log.mobile}</td>
+                      <td style={{ color: '#6d28d9', fontSize: '0.8rem', fontWeight: 700 }}>{log.template_code || 'MANUAL'}</td>
+                      <td style={{ fontSize: '0.8rem', color: '#475569', maxWidth: '320px', whiteSpace: 'pre-wrap' }}>
+                        {log.message_body}
+                      </td>
+                      <td>
+                        <span style={{
+                          backgroundColor: '#d1fae5',
+                          color: '#047857',
+                          border: '1px solid #a7f3d0',
+                          padding: '0.2rem 0.6rem',
+                          borderRadius: '9999px',
+                          fontSize: '0.75rem',
+                          fontWeight: 700
+                        }}>
+                          {log.status}
+                        </span>
                       </td>
                     </tr>
-                  ) : logs.length === 0 ? (
-                    <tr>
-                      <td colSpan="7" style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}>
-                        No WhatsApp logs dispatched yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    logs.map((log) => (
-                      <tr key={log.id}>
-                        <td style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
-                          {new Date(log.sent_at).toLocaleString('en-IN')}
-                        </td>
-                        <td style={{ fontWeight: 700, color: '#38bdf8' }}>
-                          {log.customer?.customer_name} ({log.customer?.customer_code})
-                        </td>
-                        <td style={{ color: '#f8fafc', fontWeight: 600 }}>{log.mobile}</td>
-                        <td style={{ color: '#cbd5e1', fontSize: '0.8rem', maxWidth: '320px', whiteSpace: 'pre-wrap' }}>
-                          {log.message}
-                        </td>
-                        <td style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
-                          {log.invoice_ids || 'All Outstanding'}
-                        </td>
-                        <td style={{ color: '#a78bfa', fontSize: '0.8rem', fontWeight: 600 }}>
-                          {log.user?.name || 'System'}
-                        </td>
-                        <td>
-                          <span style={{ backgroundColor: 'rgba(37, 211, 102, 0.2)', color: '#25D366', padding: '0.2rem 0.6rem', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: 700 }}>
-                            {log.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
+                  ))
+                )}
+              </tbody>
+            </table>
             <Pagination pagination={pagination} onPageChange={(p) => setPage(p)} />
           </div>
         )}
 
+        {/* Tab 2: Templates */}
         {activeTab === 'TEMPLATES' && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '1.25rem' }}>
-            {templates.map((tpl) => {
-              const isEditing = editingTemplate === tpl.id;
-              return (
-                <div
-                  key={tpl.id}
-                  style={{
-                    backgroundColor: '#0f172a',
-                    border: '1px solid #334155',
-                    borderRadius: '8px',
-                    padding: '1.25rem',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between'
-                  }}
-                >
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                      <span style={{ fontWeight: 700, color: '#38bdf8', fontSize: '0.95rem' }}>
-                        {tpl.name}
-                      </span>
-                      {isAdmin && !isEditing && (
-                        <button
-                          onClick={() => { setEditingTemplate(tpl.id); setEditedContent(tpl.content); }}
-                          style={{ backgroundColor: '#334155', color: '#f8fafc', padding: '0.3rem 0.6rem', borderRadius: '4px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-                        >
-                          <Edit2 size={14} /> Edit Template
-                        </button>
-                      )}
-                    </div>
-
-                    {isEditing ? (
-                      <textarea
-                        rows={6}
-                        value={editedContent}
-                        onChange={(e) => setEditedContent(e.target.value)}
-                        style={{ width: '100%', marginBottom: '1rem' }}
-                      />
-                    ) : (
-                      <pre style={{
-                        whiteSpace: 'pre-wrap',
-                        fontFamily: 'sans-serif',
-                        fontSize: '0.85rem',
-                        color: '#cbd5e1',
-                        backgroundColor: '#1e293b',
-                        padding: '0.875rem',
-                        borderRadius: '6px',
-                        border: '1px solid #334155'
-                      }}>
-                        {tpl.content}
-                      </pre>
-                    )}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
+            {templates.map((tpl) => (
+              <div key={tpl.id} style={{
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '10px',
+                padding: '1.25rem',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05)'
+              }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                    <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a' }}>
+                      {tpl.template_name}
+                    </h3>
+                    <span style={{ backgroundColor: '#e0e7ff', color: '#4338ca', border: '1px solid #c7d2fe', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700 }}>
+                      {tpl.template_code}
+                    </span>
                   </div>
 
-                  {isEditing && (
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
+                  {editingTemplate === tpl.id ? (
+                    <textarea
+                      rows={5}
+                      value={editedContent}
+                      onChange={(e) => setEditedContent(e.target.value)}
+                      style={{ width: '100%', fontSize: '0.85rem', marginBottom: '1rem', backgroundColor: '#ffffff', color: '#0f172a', borderColor: '#cbd5e1' }}
+                    />
+                  ) : (
+                    <div style={{
+                      backgroundColor: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '6px',
+                      padding: '0.875rem',
+                      fontSize: '0.85rem',
+                      color: '#334155',
+                      whiteSpace: 'pre-wrap',
+                      marginBottom: '1rem'
+                    }}>
+                      {tpl.content}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                  {editingTemplate === tpl.id ? (
+                    <>
                       <button
                         onClick={() => setEditingTemplate(null)}
-                        style={{ backgroundColor: '#334155', color: '#f8fafc', padding: '0.4rem 0.8rem', borderRadius: '4px', fontSize: '0.8rem' }}
+                        style={{ backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '0.4rem 0.85rem', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 600 }}
                       >
                         Cancel
                       </button>
                       <button
                         onClick={() => handleSaveTemplate(tpl.id)}
-                        style={{ backgroundColor: '#10b981', color: '#ffffff', padding: '0.4rem 0.8rem', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                        style={{ backgroundColor: '#059669', color: '#ffffff', padding: '0.4rem 0.85rem', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.25rem' }}
                       >
                         <Save size={14} /> Save Template
                       </button>
-                    </div>
+                    </>
+                  ) : (
+                    isAdmin && (
+                      <button
+                        onClick={() => { setEditingTemplate(tpl.id); setEditedContent(tpl.content); }}
+                        style={{ backgroundColor: '#f0f9ff', color: '#0284c7', border: '1px solid #bae6fd', padding: '0.4rem 0.85rem', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                      >
+                        <Edit2 size={14} /> Edit Template
+                      </button>
+                    )
                   )}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         )}
       </div>

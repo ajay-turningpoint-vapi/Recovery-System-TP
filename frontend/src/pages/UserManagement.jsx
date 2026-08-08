@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import StatusBadge from '../components/StatusBadge';
-import { UserCog, PlusCircle, Shield, User, Phone, Mail, Edit3, X } from 'lucide-react';
+import { UserCog, PlusCircle, X, Pencil } from 'lucide-react';
 import api from '../services/api';
 
 export default function UserManagement() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editUser, setEditUser] = useState(null);
 
   const [formData, setFormData] = useState({
     username: '',
@@ -18,7 +19,9 @@ export default function UserManagement() {
     email: '',
   });
 
+  const [editFormData, setEditFormData] = useState({ mobile: '', email: '', salesman_code: '', name: '', status: 'ACTIVE' });
   const [error, setError] = useState(null);
+  const [editError, setEditError] = useState(null);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -71,28 +74,55 @@ export default function UserManagement() {
     }
   };
 
+  const openEditModal = (user) => {
+    setEditUser(user);
+    setEditFormData({
+      name: user.name || '',
+      mobile: user.mobile || '',
+      email: user.email || '',
+      salesman_code: user.salesman_code || '',
+      status: user.status || 'ACTIVE',
+    });
+    setEditError(null);
+  };
+
+  const handleEditUser = async (e) => {
+    e.preventDefault();
+    setEditError(null);
+    try {
+      const res = await api.put(`/users/${editUser.id}`, editFormData);
+      if (res.data.success) {
+        setEditUser(null);
+        fetchUsers();
+      }
+    } catch (err) {
+      setEditError(err.response?.data?.message || 'Failed to update user');
+    }
+  };
+
   return (
     <div className="animate-fade-in">
       <div style={{
-        backgroundColor: '#1e293b',
-        border: '1px solid #334155',
+        backgroundColor: '#ffffff',
+        border: '1px solid #e2e8f0',
         borderRadius: '12px',
         padding: '1.25rem',
-        marginBottom: '1.5rem'
+        marginBottom: '1.5rem',
+        boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05)'
       }}>
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           marginBottom: '1.25rem',
-          borderBottom: '1px solid #334155',
+          borderBottom: '1px solid #e2e8f0',
           paddingBottom: '0.75rem'
         }}>
           <div>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <UserCog size={24} color="#6366f1" /> User & Salesmen Management
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <UserCog size={24} color="#4f46e5" /> User & Salesmen Management
             </h2>
-            <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+            <p style={{ fontSize: '0.8rem', color: '#64748b' }}>
               Create salesman accounts, assign salesman codes, and manage role-based permissions
             </p>
           </div>
@@ -100,7 +130,7 @@ export default function UserManagement() {
           <button
             onClick={() => setShowCreateModal(true)}
             style={{
-              backgroundColor: '#6366f1',
+              backgroundColor: '#4f46e5',
               color: '#ffffff',
               padding: '0.625rem 1.25rem',
               borderRadius: '8px',
@@ -108,7 +138,7 @@ export default function UserManagement() {
               display: 'flex',
               alignItems: 'center',
               gap: '0.5rem',
-              boxShadow: '0 4px 12px rgba(99, 102, 241, 0.4)'
+              boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)'
             }}
           >
             <PlusCircle size={18} /> Create New User / Salesman
@@ -119,14 +149,14 @@ export default function UserManagement() {
           <table className="custom-table">
             <thead>
               <tr>
-                <th>User Full Name</th>
+                <th>Full Name</th>
                 <th>Username</th>
                 <th>Role</th>
-                <th>Salesman Code</th>
-                <th>Mobile Number</th>
-                <th>Email Address</th>
+                <th>Salesman Code (ERP)</th>
+                <th>📱 Mobile Number</th>
+               
                 <th>Status</th>
-                <th>Action</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -137,45 +167,82 @@ export default function UserManagement() {
                   </td>
                 </tr>
               ) : (
-                users.map((u) => (
-                  <tr key={u.id}>
-                    <td style={{ fontWeight: 700, color: '#f8fafc' }}>{u.name}</td>
-                    <td style={{ color: '#38bdf8', fontWeight: 600 }}>{u.username}</td>
-                    <td>
-                      <span style={{
-                        backgroundColor: u.role === 'ADMIN' ? 'rgba(99, 102, 241, 0.2)' : 'rgba(56, 189, 248, 0.2)',
-                        color: u.role === 'ADMIN' ? '#818cf8' : '#38bdf8',
-                        padding: '0.2rem 0.6rem',
-                        borderRadius: '4px',
-                        fontSize: '0.75rem',
-                        fontWeight: 700
-                      }}>
-                        {u.role}
-                      </span>
-                    </td>
-                    <td style={{ color: '#a78bfa', fontWeight: 700 }}>{u.salesman_code || 'N/A'}</td>
-                    <td style={{ color: '#cbd5e1' }}>{u.mobile || 'N/A'}</td>
-                    <td style={{ color: '#cbd5e1' }}>{u.email || 'N/A'}</td>
+                users.map((u) => {
+                  // Parse bracketed salesman string if present: e.g. "JIGNESH (7567034004)"
+                  let cleanName = u.name || '';
+                  let extractedMobile = u.mobile || '';
+                  if (cleanName.includes('(') && cleanName.includes(')')) {
+                    const match = cleanName.match(/^(.*?)\s*\((\d{10})\)$/);
+                    if (match) {
+                      cleanName = match[1].trim();
+                      if (!extractedMobile) extractedMobile = match[2];
+                    }
+                  }
+
+                  return (
+                    <tr key={u.id}>
+                      <td style={{ fontWeight: 700, color: '#0f172a' }}>{cleanName}</td>
+                      <td style={{ color: '#0284c7', fontWeight: 600 }}>{u.username}</td>
+                      <td>
+                        <span style={{
+                          backgroundColor: u.role === 'ADMIN' ? '#e0e7ff' : '#e0f2fe',
+                          color: u.role === 'ADMIN' ? '#4338ca' : '#0369a1',
+                          border: u.role === 'ADMIN' ? '1px solid #c7d2fe' : '1px solid #bae6fd',
+                          padding: '0.2rem 0.6rem',
+                          borderRadius: '4px',
+                          fontSize: '0.75rem',
+                          fontWeight: 700
+                        }}>
+                          {u.role}
+                        </span>
+                      </td>
+                      <td style={{ color: '#6d28d9', fontWeight: 700 }}>
+                        {u.salesman_code ? u.salesman_code.replace(/\s*\(\d{10}\)$/, '') : <span style={{color:'#94a3b8',fontSize:'0.75rem'}}>Not set</span>}
+                      </td>
+                      <td style={{ color: extractedMobile ? '#0f172a' : '#f59e0b', fontWeight: extractedMobile ? 600 : 600 }}>
+                        {extractedMobile || '⚠️ Not set — click Edit'}
+                      </td>
+                   
                     <td>
                       <StatusBadge status={u.status} />
                     </td>
                     <td>
-                      <button
-                        onClick={() => toggleUserStatus(u)}
-                        style={{
-                          backgroundColor: u.status === 'ACTIVE' ? 'rgba(244, 63, 94, 0.2)' : 'rgba(16, 185, 129, 0.2)',
-                          color: u.status === 'ACTIVE' ? '#f43f5e' : '#34d399',
-                          padding: '0.3rem 0.6rem',
-                          borderRadius: '4px',
-                          fontSize: '0.75rem',
-                          fontWeight: 700
-                        }}
-                      >
-                        {u.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
-                      </button>
+                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        <button
+                          onClick={() => openEditModal(u)}
+                          title="Edit mobile, email & salesman code"
+                          style={{
+                            backgroundColor: '#e0e7ff',
+                            color: '#4338ca',
+                            border: '1px solid #c7d2fe',
+                            padding: '0.3rem 0.6rem',
+                            borderRadius: '4px',
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            display: 'flex', alignItems: 'center', gap: '0.25rem'
+                          }}
+                        >
+                          <Pencil size={12} /> Edit
+                        </button>
+                        <button
+                          onClick={() => toggleUserStatus(u)}
+                          style={{
+                            backgroundColor: u.status === 'ACTIVE' ? '#ffe4e6' : '#d1fae5',
+                            color: u.status === 'ACTIVE' ? '#be123c' : '#047857',
+                            border: u.status === 'ACTIVE' ? '1px solid #fecdd3' : '1px solid #a7f3d0',
+                            padding: '0.3rem 0.6rem',
+                            borderRadius: '4px',
+                            fontSize: '0.75rem',
+                            fontWeight: 700
+                          }}
+                        >
+                          {u.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
-                ))
+                );
+              })
               )}
             </tbody>
           </table>
@@ -185,24 +252,24 @@ export default function UserManagement() {
       {showCreateModal && (
         <div className="modal-overlay">
           <div className="modal-content animate-fade-in" style={{ padding: '1.5rem', maxWidth: '520px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid #334155', pb: '0.75rem' }}>
-              <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#f8fafc' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', pb: '0.75rem' }}>
+              <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a' }}>
                 Create New User Account
               </h2>
-              <button onClick={() => setShowCreateModal(false)} style={{ background: 'transparent', color: '#94a3b8' }}>
+              <button onClick={() => setShowCreateModal(false)} style={{ background: 'transparent', color: '#64748b' }}>
                 <X size={20} />
               </button>
             </div>
 
             {error && (
-              <div style={{ backgroundColor: 'rgba(244, 63, 94, 0.15)', color: '#f43f5e', border: '1px solid rgba(244, 63, 94, 0.3)', padding: '0.75rem', borderRadius: '6px', fontSize: '0.85rem', marginBottom: '1rem' }}>
+              <div style={{ backgroundColor: '#ffe4e6', color: '#be123c', border: '1px solid #fecdd3', padding: '0.75rem', borderRadius: '6px', fontSize: '0.85rem', marginBottom: '1rem' }}>
                 {error}
               </div>
             )}
 
             <form onSubmit={handleCreateUser} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
               <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#94a3b8', display: 'block', marginBottom: '0.375rem' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '0.375rem' }}>
                   Full Name *
                 </label>
                 <input
@@ -216,7 +283,7 @@ export default function UserManagement() {
               </div>
 
               <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#94a3b8', display: 'block', marginBottom: '0.375rem' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '0.375rem' }}>
                   Username *
                 </label>
                 <input
@@ -230,7 +297,7 @@ export default function UserManagement() {
               </div>
 
               <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#94a3b8', display: 'block', marginBottom: '0.375rem' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '0.375rem' }}>
                   Password *
                 </label>
                 <input
@@ -244,7 +311,7 @@ export default function UserManagement() {
               </div>
 
               <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#94a3b8', display: 'block', marginBottom: '0.375rem' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '0.375rem' }}>
                   User Role *
                 </label>
                 <select
@@ -258,7 +325,7 @@ export default function UserManagement() {
               </div>
 
               <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#94a3b8', display: 'block', marginBottom: '0.375rem' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '0.375rem' }}>
                   Salesman Code (e.g. SM-003)
                 </label>
                 <input
@@ -271,7 +338,7 @@ export default function UserManagement() {
               </div>
 
               <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#94a3b8', display: 'block', marginBottom: '0.375rem' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '0.375rem' }}>
                   Mobile Number
                 </label>
                 <input
@@ -283,20 +350,78 @@ export default function UserManagement() {
                 />
               </div>
 
+              <div>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '0.375rem' }}>
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  placeholder="salesman@company.com"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
               <div style={{ gridColumn: 'span 2', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  style={{ backgroundColor: '#334155', color: '#f8fafc', padding: '0.625rem 1.25rem', borderRadius: '6px', fontWeight: 600 }}
+                  style={{ backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '0.625rem 1.25rem', borderRadius: '6px', fontWeight: 600 }}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  style={{ backgroundColor: '#6366f1', color: '#ffffff', padding: '0.625rem 1.25rem', borderRadius: '6px', fontWeight: 600 }}
+                  style={{ backgroundColor: '#4f46e5', color: '#ffffff', padding: '0.625rem 1.25rem', borderRadius: '6px', fontWeight: 700 }}
                 >
                   Create User
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit User Modal */}
+      {editUser && (
+        <div className="modal-overlay">
+          <div className="modal-content animate-fade-in" style={{ padding: '1.5rem', maxWidth: '480px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
+              <div>
+                <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a' }}>Edit User</h2>
+                <p style={{ fontSize: '0.78rem', color: '#64748b' }}>Update contact details for <strong>{editUser.username}</strong></p>
+              </div>
+              <button onClick={() => setEditUser(null)} style={{ background: 'transparent', color: '#64748b' }}><X size={20} /></button>
+            </div>
+
+            {editError && (
+              <div style={{ backgroundColor: '#ffe4e6', color: '#be123c', border: '1px solid #fecdd3', padding: '0.75rem', borderRadius: '6px', fontSize: '0.85rem', marginBottom: '1rem' }}>
+                {editError}
+              </div>
+            )}
+
+            <form onSubmit={handleEditUser} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '0.375rem' }}>Full Name</label>
+                <input type="text" value={editFormData.name} onChange={e => setEditFormData({ ...editFormData, name: e.target.value })} style={{ width: '100%' }} placeholder="Full Name" />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '0.375rem' }}>Salesman Code (ERP)</label>
+                <input type="text" value={editFormData.salesman_code} onChange={e => setEditFormData({ ...editFormData, salesman_code: e.target.value })} style={{ width: '100%' }} placeholder="e.g. ASHVINI" />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '0.375rem' }}>📱 Mobile Number (for WhatsApp)</label>
+                <input type="text" value={editFormData.mobile} onChange={e => setEditFormData({ ...editFormData, mobile: e.target.value })} style={{ width: '100%' }} placeholder="9876543210" />
+                <p style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '0.25rem' }}>WhatsApp messages will be sent FROM this number</p>
+              </div>
+              <div>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '0.375rem' }}>📧 Email Address</label>
+                <input type="email" value={editFormData.email} onChange={e => setEditFormData({ ...editFormData, email: e.target.value })} style={{ width: '100%' }} placeholder="salesman@company.com" />
+              </div>
+              <div style={{ gridColumn: 'span 2', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
+                <button type="button" onClick={() => setEditUser(null)} style={{ backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '0.625rem 1.25rem', borderRadius: '6px', fontWeight: 600 }}>Cancel</button>
+                <button type="submit" style={{ backgroundColor: '#4f46e5', color: '#ffffff', padding: '0.625rem 1.25rem', borderRadius: '6px', fontWeight: 700 }}>Save Changes</button>
               </div>
             </form>
           </div>

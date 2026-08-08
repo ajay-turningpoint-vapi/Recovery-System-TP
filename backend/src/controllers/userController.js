@@ -24,12 +24,81 @@ async function getUsers(req, res, next) {
   }
 }
 
+async function getSalesmen(req, res, next) {
+  try {
+    // Helper to extract clean name and mobile phone number from raw salesman strings like "JIGNESH (7567034004)"
+    const parseSalesmanInfo = (rawStr, fallbackMobile = null) => {
+      if (!rawStr) return { cleanName: 'UNASSIGNED', mobile: fallbackMobile || '' };
+      const str = String(rawStr).trim();
+      const match = str.match(/^(.*?)\s*\((\d{10})\)$/);
+      if (match) {
+        return {
+          cleanName: match[1].trim(),
+          mobile: fallbackMobile || match[2]
+        };
+      }
+      return { cleanName: str, mobile: fallbackMobile || '' };
+    };
+
+    // 1. Fetch salesmen registered in User table
+    const salesmanUsers = await prisma.user.findMany({
+      where: { role: 'SALESMAN', status: 'ACTIVE' },
+      select: { salesman_code: true, name: true, mobile: true }
+    });
+
+    // 2. Fetch distinct salesman_code values from Customer table
+    const distinctCustomers = await prisma.customer.groupBy({
+      by: ['salesman_code'],
+      _count: { id: true }
+    });
+
+    const salesmenMap = new Map();
+
+    for (const c of distinctCustomers) {
+      if (c.salesman_code) {
+        const { cleanName, mobile } = parseSalesmanInfo(c.salesman_code);
+        salesmenMap.set(c.salesman_code, {
+          code: c.salesman_code,
+          name: cleanName,
+          raw_name: c.salesman_code,
+          mobile: mobile,
+          count: c._count.id
+        });
+      }
+    }
+
+    for (const u of salesmanUsers) {
+      if (u.salesman_code) {
+        const existing = salesmenMap.get(u.salesman_code);
+        const { cleanName, mobile } = parseSalesmanInfo(u.name || u.salesman_code, u.mobile);
+        salesmenMap.set(u.salesman_code, {
+          code: u.salesman_code,
+          name: cleanName,
+          raw_name: u.salesman_code,
+          mobile: mobile || (existing ? existing.mobile : ''),
+          count: existing ? existing.count : 0
+        });
+      }
+    }
+
+    const list = Array.from(salesmenMap.values()).sort((a, b) => b.count - a.count);
+
+    res.json({ success: true, data: list });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function createUser(req, res, next) {
   try {
     const { username, password, name, role = 'SALESMAN', salesman_code, mobile, email } = req.body;
 
     if (!username || !password || !name) {
       return res.status(400).json({ success: false, message: 'Username, password, and name are required' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters long' });
     }
 
     const existing = await prisma.user.findUnique({
@@ -78,6 +147,10 @@ async function createUser(req, res, next) {
 async function updateUser(req, res, next) {
   try {
     const userId = parseInt(req.params.id, 10);
+    if (isNaN(userId)) {
+      return res.status(400).json({ success: false, message: 'Invalid user ID provided' });
+    }
+
     const { name, role, salesman_code, mobile, email, status, password } = req.body;
 
     const existing = await prisma.user.findUnique({ where: { id: userId } });
@@ -95,6 +168,9 @@ async function updateUser(req, res, next) {
     };
 
     if (password) {
+      if (password.length < 6) {
+        return res.status(400).json({ success: false, message: 'Password must be at least 6 characters long' });
+      }
       dataToUpdate.password_hash = await bcrypt.hash(password, 10);
     }
 
@@ -125,6 +201,7 @@ async function updateUser(req, res, next) {
 
 module.exports = {
   getUsers,
+  getSalesmen,
   createUser,
   updateUser,
 };

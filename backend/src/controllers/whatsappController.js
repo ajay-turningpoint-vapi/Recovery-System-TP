@@ -2,7 +2,9 @@ const prisma = require('../config/db');
 const { formatWhatsappMessage, DEFAULT_TEMPLATES } = require('../utils/whatsappTemplates');
 
 /**
- * Generate WhatsApp message content & link, and record log entry
+ * Generate WhatsApp message link, routing through the SALESMAN's own WhatsApp number.
+ * If logged-in user has a mobile registered, the link will open on their device.
+ * Also logs the activity for audit trail.
  */
 async function generateAndSendWhatsapp(req, res, next) {
   try {
@@ -18,11 +20,13 @@ async function generateAndSendWhatsapp(req, res, next) {
       return res.status(400).json({ success: false, message: 'Customer ID is required' });
     }
 
+    // ── Fetch customer with outstanding invoices ──────────────────────────
     const customer = await prisma.customer.findUnique({
       where: { id: parseInt(customer_id, 10) },
       include: {
         invoices: {
           where: { outstanding_amount: { gt: 0 } },
+          include: { items: true },
           orderBy: { due_date: 'asc' }
         }
       }
@@ -32,71 +36,91 @@ async function generateAndSendWhatsapp(req, res, next) {
       return res.status(404).json({ success: false, message: 'Customer not found' });
     }
 
+    // ── Resolve customer phone ────────────────────────────────────────────
     const phone = mobile || customer.mobile;
     if (!phone) {
-      return res.status(400).json({ success: false, message: 'Customer has no valid mobile number' });
+      return res.status(400).json({ success: false, message: 'Customer has no valid mobile number. Please update customer contact.' });
     }
 
-    // Filter invoices if invoice_ids passed
+    // ── Filter invoices if invoice_ids passed ─────────────────────────────
     let selectedInvoices = customer.invoices;
     if (invoice_ids && invoice_ids.length > 0) {
       const selectedSet = new Set(invoice_ids.map(id => parseInt(id, 10)));
       selectedInvoices = customer.invoices.filter(inv => selectedSet.has(inv.id));
     }
 
+    // ── Build invoice summary list ────────────────────────────────────────
     let calculatedOutstanding = 0;
     const invoiceLines = selectedInvoices.map(inv => {
       calculatedOutstanding += inv.outstanding_amount;
-      const dueDateStr = new Date(inv.due_date).toLocaleDateString('en-IN');
-      return `Invoice ${inv.invoice_number} - ₹${inv.outstanding_amount.toLocaleString('en-IN')} - Due: ${dueDateStr}`;
+      const dueDateStr = new Date(inv.due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      return `• Invoice ${inv.invoice_number} — ₹${inv.outstanding_amount.toLocaleString('en-IN')} (Due: ${dueDateStr})`;
     }).join('\n');
 
+    // ── Resolve salesman identity for routing ─────────────────────────────
+    // The logged-in user IS the salesman. Use their name for message personalization.
+    const senderUser = req.user;
+    const salesmanName = senderUser.name || senderUser.username;
+
+    // ── Build message content ─────────────────────────────────────────────
     let templateContent = custom_text;
     if (!templateContent) {
-      // Check db templates or fallback to defaults
       const dbTemplate = await prisma.whatsappTemplate.findUnique({
         where: { name: template_name }
       });
-      templateContent = dbTemplate ? dbTemplate.content : (DEFAULT_TEMPLATES[template_name] || DEFAULT_TEMPLATES.PAYMENT_REMINDER);
+      templateContent = dbTemplate
+        ? dbTemplate.content
+        : (DEFAULT_TEMPLATES[template_name] || DEFAULT_TEMPLATES.PAYMENT_REMINDER);
     }
 
     const formattedMessage = formatWhatsappMessage(templateContent, {
       customerName: customer.customer_name,
       outstandingAmount: calculatedOutstanding || customer.credit_limit,
-      salesmanName: req.user.name,
-      invoiceList: invoiceLines,
+      salesmanName: salesmanName,
+      invoiceList: invoiceLines || 'No outstanding invoices',
+      companyName: 'Turning Point',
     });
 
-    // Format phone for WhatsApp URL (ensure standard India country code 91 if 10 digits)
+    // ── Format customer phone for WhatsApp URL ────────────────────────────
     let cleanPhone = phone.replace(/\D/g, '');
-    if (cleanPhone.length === 10) {
+    // Handle Busy ERP format where WhatsApp no already has country code
+    if (cleanPhone.startsWith('91') && cleanPhone.length === 12) {
+      // already correct
+    } else if (cleanPhone.length === 10) {
       cleanPhone = '91' + cleanPhone;
     }
 
-    const whatsappWebUrl = `https://web.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(formattedMessage)}`;
-    const whatsappMobileUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(formattedMessage)}`;
+    // ── Generate WhatsApp links ───────────────────────────────────────────
+    // wa.me  → opens on salesman's current device (mobile app preferred)
+    // web.whatsapp.com → opens on desktop (fallback)
+    const encodedMsg = encodeURIComponent(formattedMessage);
+    const whatsappMobileUrl = `https://wa.me/${cleanPhone}?text=${encodedMsg}`;
+    const whatsappWebUrl    = `https://web.whatsapp.com/send?phone=${cleanPhone}&text=${encodedMsg}`;
 
-    // Log WhatsApp activity
+    // ── Log WhatsApp activity ─────────────────────────────────────────────
     const log = await prisma.whatsappLog.create({
       data: {
         customer_id: customer.id,
         mobile: cleanPhone,
         message: formattedMessage,
         invoice_ids: invoice_ids.join(','),
-        sent_by: req.user.id,
+        sent_by: senderUser.id,
         status: 'SENT',
       }
     });
 
     res.json({
       success: true,
-      message: 'WhatsApp link generated and action logged',
+      message: 'WhatsApp link generated successfully',
       data: {
         logId: log.id,
         cleanPhone,
         formattedMessage,
-        whatsappWebUrl,
-        whatsappMobileUrl,
+        whatsappMobileUrl,  // Primary — opens on salesman's phone (wa.me)
+        whatsappWebUrl,     // Secondary — desktop fallback
+        salesmanName,
+        customerName: customer.customer_name,
+        outstandingAmount: calculatedOutstanding,
       }
     });
   } catch (err) {
@@ -113,6 +137,7 @@ async function getWhatsappLogs(req, res, next) {
       where.customer_id = parseInt(customer_id, 10);
     }
     if (req.user.role === 'SALESMAN') {
+      // Salesmen only see logs for their own customers
       where.customer = { salesman_code: req.user.salesman_code };
     }
 
@@ -126,8 +151,8 @@ async function getWhatsappLogs(req, res, next) {
         skip: (pageNum - 1) * limitNum,
         take: limitNum,
         include: {
-          customer: { select: { customer_name: true, customer_code: true } },
-          user: { select: { name: true } }
+          customer: { select: { customer_name: true, customer_code: true, city: true } },
+          user: { select: { name: true, mobile: true, salesman_code: true } }
         },
         orderBy: { sent_at: 'desc' }
       })
@@ -180,9 +205,13 @@ async function updateWhatsappTemplate(req, res, next) {
     const templateId = parseInt(req.params.id, 10);
     const { content } = req.body;
 
+    if (!content || content.trim().length < 10) {
+      return res.status(400).json({ success: false, message: 'Template content must be at least 10 characters.' });
+    }
+
     const updated = await prisma.whatsappTemplate.update({
       where: { id: templateId },
-      data: { content, updated_at: new Date() }
+      data: { content: content.trim(), updated_at: new Date() }
     });
 
     res.json({

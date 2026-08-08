@@ -14,6 +14,7 @@ import WhatsappModule from './pages/WhatsappModule';
 import MssqlImport from './pages/MssqlImport';
 import Reports from './pages/Reports';
 import UserManagement from './pages/UserManagement';
+import SalesmanWiseDashboard from './pages/SalesmanWiseDashboard';
 import Settings from './pages/Settings';
 
 // Protected Route Wrapper
@@ -24,11 +25,11 @@ const ProtectedRoute = ({ children, adminOnly = false }) => {
     return (
       <div style={{
         minHeight: '100vh',
-        backgroundColor: '#0f172a',
+        backgroundColor: '#f8fafc',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        color: '#38bdf8',
+        color: '#4f46e5',
         fontWeight: 700
       }}>
         Initializing Payment Collection Portal...
@@ -56,8 +57,12 @@ export default function App() {
           <Route path="/login" element={<Login />} />
 
           {/* Protected Main Application */}
-          <Route element={<ProtectedRoute><MainLayout pageTitle="Salesman Dashboard" /></ProtectedRoute>}>
+          <Route element={<ProtectedRoute><MainLayout pageTitle="Overall Dashboard" /></ProtectedRoute>}>
             <Route path="/dashboard" element={<SalesmanDashboard />} />
+          </Route>
+
+          <Route element={<ProtectedRoute adminOnly={true}><MainLayout pageTitle="Salesman-Wise Dashboard" /></ProtectedRoute>}>
+            <Route path="/salesmen-dashboard" element={<SalesmanWiseDashboard />} />
           </Route>
 
           <Route element={<ProtectedRoute><MainLayout pageTitle="My Customers" /></ProtectedRoute>}>

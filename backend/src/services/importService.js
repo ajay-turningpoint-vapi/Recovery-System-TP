@@ -1,11 +1,16 @@
+const bcrypt = require('bcryptjs');
 const prisma = require('../config/db');
 const { fetchMssqlData } = require('./mssqlService');
 const { determineInvoiceStatus } = require('../utils/calculations');
 
 /**
- * Execute full data import pipeline from MSSQL to MariaDB
+ * Execute full data import pipeline from MSSQL ERP to MariaDB.
+ * Source of Truth: Busy ERP (MSSQL)
+ * 
+ * Imports exact bill-by-bill pending references (TRAN3 + TRAN2 + MASTER1)
+ * directly into MariaDB customers, invoices, and invoice_items.
  */
-async function processMssqlImport(startDate, endDate) {
+async function processMssqlImport(startDate, endDate, mode = 'outstanding') {
   const log = await prisma.importLog.create({
     data: {
       started_at: new Date(),
@@ -21,7 +26,7 @@ async function processMssqlImport(startDate, endDate) {
   let warningMessage = null;
 
   try {
-    const fetchResult = await fetchMssqlData(startDate, endDate);
+    const fetchResult = await fetchMssqlData(startDate, endDate, mode);
     if (fetchResult.warning) {
       warningMessage = fetchResult.warning;
     }
@@ -29,161 +34,55 @@ async function processMssqlImport(startDate, endDate) {
     const records = fetchResult.records || [];
     totalRecords = records.length;
 
+    const defaultPasswordHash = await bcrypt.hash('salesman123', 10);
+    const salesmanCache = new Set();
+
+    // ── STEP 1: ERP PENDING BILLS & CUSTOMERS (TRAN3) ─────────────────────────
     for (const rawRow of records) {
       try {
-        // Map raw MSSQL record fields
-        const vouNo = String(rawRow.VOU_NO || rawRow.VOUCHER_NO || '').trim();
-        const vouDate = rawRow.VOUCHER_DATE ? new Date(rawRow.VOUCHER_DATE) : new Date();
-        const partyName = String(rawRow.PARTY || rawRow.CUSTOMER || rawRow.PARTY_NAME || 'Unknown Customer').trim();
-        const partyAlias = rawRow.ALIAS ? String(rawRow.ALIAS).trim() : null;
-        const address = rawRow.ADDRESS ? String(rawRow.ADDRESS).trim() : 'Commercial Office';
-        const city = rawRow.CITY ? String(rawRow.CITY).trim() : 'City Area';
-        const state = rawRow.STATE ? String(rawRow.STATE).trim() : 'State';
-        const gstin = rawRow.GSTIN ? String(rawRow.GSTIN).trim() : null;
-        const mobile = rawRow.MOBILE ? String(rawRow.MOBILE).replace(/\D/g, '') : '9876543210';
-        const salesmanCode = rawRow.SALESMAN ? String(rawRow.SALESMAN).trim() : 'SM-001';
-        const creditLimit = parseFloat(rawRow.CREDIT_LIMIT || 100000);
-        const creditDays = parseInt(rawRow.CREDIT_DAYS || 30, 10);
-        
-        const totalAmount = parseFloat(rawRow.TOTAL_AMOUNT || rawRow.AMOUNT || 0);
-
-        let dueDate = rawRow.DUE_DATE ? new Date(rawRow.DUE_DATE) : null;
-        if (!dueDate || isNaN(dueDate.getTime())) {
-          dueDate = new Date(vouDate);
-          dueDate.setDate(dueDate.getDate() + creditDays);
-        }
-
-        if (!vouNo || totalAmount <= 0) {
-          failedRecords++;
-          continue;
-        }
-
-        // Generate customer code from name/alias if missing
-        const customerCode = partyAlias || partyName.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().substring(0, 12);
-
-        // 1. Upsert Customer
-        let customer = await prisma.customer.findUnique({
-          where: { customer_code: customerCode },
-        });
-
-        if (!customer) {
-          customer = await prisma.customer.create({
-            data: {
-              customer_code: customerCode,
-              customer_name: partyName,
-              alias: partyAlias,
-              address: address,
-              city: city,
-              state: state,
-              gstin: gstin,
-              mobile: mobile,
-              contact_person: partyName,
-              salesman_code: salesmanCode,
-              credit_limit: creditLimit,
-              credit_days: creditDays,
-              status: 'ACTIVE',
-            },
-          });
-        } else {
-          // Update existing customer contact/credit details if changed
-          customer = await prisma.customer.update({
-            where: { id: customer.id },
-            data: {
-              customer_name: partyName,
-              address: address || customer.address,
-              city: city || customer.city,
-              salesman_code: salesmanCode || customer.salesman_code,
-              credit_limit: creditLimit || customer.credit_limit,
-              credit_days: creditDays || customer.credit_days,
-            },
-          });
-        }
-
-        // 2. Upsert Invoice
-        const existingInvoice = await prisma.invoice.findUnique({
-          where: { invoice_number: vouNo },
-          include: { payments: true }
-        });
-
-        const paidAmount = existingInvoice ? existingInvoice.paid_amount : 0;
-        const outstandingAmount = Math.max(0, totalAmount - paidAmount);
-        const invStatus = determineInvoiceStatus(dueDate, outstandingAmount);
-
-        if (existingInvoice) {
-          await prisma.invoice.update({
-            where: { id: existingInvoice.id },
-            data: {
-              invoice_date: vouDate,
-              customer_id: customer.id,
-              salesman_code: salesmanCode,
-              invoice_amount: totalAmount,
-              outstanding_amount: outstandingAmount,
-              due_date: dueDate,
-              status: invStatus,
-              updated_at: new Date(),
-            },
-          });
-
-          // Add invoice line item if provided
-          if (rawRow.ITEM_NAME) {
-            const existingItem = await prisma.invoiceItem.findFirst({
-              where: { invoice_id: existingInvoice.id, item_name: String(rawRow.ITEM_NAME) }
-            });
-            if (!existingItem) {
-              await prisma.invoiceItem.create({
-                data: {
-                  invoice_id: existingInvoice.id,
-                  item_name: String(rawRow.ITEM_NAME),
-                  hsn: rawRow.HSN ? String(rawRow.HSN) : null,
-                  quantity: parseFloat(rawRow.QTY || 1),
-                  rate: parseFloat(rawRow.RATE || totalAmount),
-                  tax: parseFloat(rawRow.TAX || 18),
-                  discount: parseFloat(rawRow.DISC || 0),
-                  amount: totalAmount,
-                }
-              });
-            }
-          }
-
-          updatedRecords++;
-        } else {
-          const newInv = await prisma.invoice.create({
-            data: {
-              invoice_number: vouNo,
-              invoice_date: vouDate,
-              customer_id: customer.id,
-              salesman_code: salesmanCode,
-              invoice_amount: totalAmount,
-              paid_amount: 0,
-              outstanding_amount: totalAmount,
-              due_date: dueDate,
-              source_voucher_code: vouNo,
-              status: invStatus,
-              imported_at: new Date(),
-            },
-          });
-
-          if (rawRow.ITEM_NAME) {
-            await prisma.invoiceItem.create({
-              data: {
-                invoice_id: newInv.id,
-                item_name: String(rawRow.ITEM_NAME),
-                hsn: rawRow.HSN ? String(rawRow.HSN) : null,
-                quantity: parseFloat(rawRow.QTY || 1),
-                rate: parseFloat(rawRow.RATE || totalAmount),
-                tax: parseFloat(rawRow.TAX || 18),
-                discount: parseFloat(rawRow.DISC || 0),
-                amount: totalAmount,
-              }
-            });
-          }
-
-          insertedRecords++;
-        }
+        await processOutstandingRow(rawRow, defaultPasswordHash, salesmanCache);
+        insertedRecords++;
       } catch (rowErr) {
-        console.error(`Error processing row ${rawRow.VOU_NO}:`, rowErr.message);
+        console.error(`Error processing pending bill row:`, rowErr.message);
         failedRecords++;
       }
+    }
+
+    // ── STEP 2: ERP INVOICE LINE ITEMS (TRAN2) ───────────────────────────────
+    try {
+      console.log('Fetching invoice line items from Busy ERP MSSQL...');
+      const itemsFetchResult = await fetchMssqlData(startDate, endDate, 'invoices');
+      const itemRecords = itemsFetchResult.records || [];
+
+      const invoiceMap = new Map();
+      for (const rawRow of itemRecords) {
+        const vouNo = String(rawRow.VOU_NO || rawRow.BILL_NO || '').trim();
+        if (!vouNo) continue;
+
+        if (!invoiceMap.has(vouNo)) {
+          invoiceMap.set(vouNo, []);
+        }
+        if (rawRow.ITEM_NAME) {
+          invoiceMap.get(vouNo).push({
+            item_name: String(rawRow.ITEM_NAME).trim(),
+            quantity: parseFloat(rawRow.QTY || 0),
+            rate: parseFloat(rawRow.RATE || 0),
+            discount: parseFloat(rawRow.DISC || rawRow.DISCOUNT || 0),
+            amount: parseFloat(rawRow.TOTAL_AMOUNT || rawRow.AMOUNT || 0),
+          });
+        }
+      }
+
+      for (const [vouNo, items] of invoiceMap.entries()) {
+        try {
+          await processInvoiceItemsOnly(vouNo, items);
+        } catch (itemErr) {
+          console.error(`Error attaching invoice items for ${vouNo}:`, itemErr.message);
+        }
+      }
+      console.log(`Successfully attached line items for ${invoiceMap.size} vouchers.`);
+    } catch (itemsErr) {
+      console.error('Error syncing invoice line items:', itemsErr.message);
     }
 
     const finalStatus = failedRecords === totalRecords && totalRecords > 0 ? 'FAILED' : 'SUCCESS';
@@ -216,9 +115,198 @@ async function processMssqlImport(startDate, endDate) {
         error_message: err.message,
       },
     });
-
-    throw err;
+    return {
+      success: false,
+      error: err.message,
+    };
   }
+}
+
+/**
+ * Atomic helper: Upsert Salesman user in MariaDB
+ */
+async function upsertSalesman(salesmanCode, salesmanPhone, defaultPasswordHash, salesmanCache) {
+  if (!salesmanCode || salesmanCode === 'UNASSIGNED') return;
+
+  const cleanCode = salesmanCode.trim().toUpperCase();
+  if (salesmanCache.has(cleanCode)) return;
+
+  // Extract phone number from salesman code/name if available (e.g. CHAMPALAL (8769694915))
+  let extractedPhone = salesmanPhone;
+  const match = cleanCode.match(/\d{10}/);
+  if (match) {
+    extractedPhone = match[0];
+  }
+
+  const cleanName = cleanCode.replace(/\(\s*\d+\s*\)/g, '').trim();
+  const username = cleanName.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  if (!username) return;
+
+  await prisma.user.upsert({
+    where: { username },
+    create: {
+      username,
+      password_hash: defaultPasswordHash,
+      name: cleanName,
+      role: 'SALESMAN',
+      salesman_code: cleanCode,
+      mobile: extractedPhone || null,
+      status: 'ACTIVE',
+    },
+    update: {
+      name: cleanName,
+      salesman_code: cleanCode,
+      ...(extractedPhone ? { mobile: extractedPhone } : {}),
+    },
+  });
+
+  salesmanCache.add(cleanCode);
+}
+
+/**
+ * Atomic helper: Upsert Customer in MariaDB
+ */
+async function upsertCustomer(customerCode, data) {
+  const {
+    partyName, partyAlias, address, city, state, gstin, email,
+    mobile, alternate_mobile, salesmanCode, creditLimit, creditDays,
+  } = data;
+
+  return await prisma.customer.upsert({
+    where: { customer_code: customerCode },
+    create: {
+      customer_code: customerCode,
+      customer_name: partyName,
+      alias: partyAlias || null,
+      address: address || null,
+      city: city || null,
+      state: state || null,
+      gstin: gstin || null,
+      contact_person: partyName,
+      mobile: mobile || null,
+      alternate_mobile: alternate_mobile || null,
+      email: email || null,
+      salesman_code: salesmanCode !== 'UNASSIGNED' ? salesmanCode : null,
+      credit_limit: creditLimit,
+      credit_days: creditDays,
+      status: 'ACTIVE',
+    },
+    update: {
+      customer_name: partyName,
+      alias: partyAlias || null,
+      address: address || null,
+      city: city || null,
+      state: state || null,
+      gstin: gstin || null,
+      mobile: mobile || null,
+      alternate_mobile: alternate_mobile || null,
+      email: email || null,
+      ...(salesmanCode !== 'UNASSIGNED' ? { salesman_code: salesmanCode } : {}),
+      credit_limit: creditLimit,
+      credit_days: creditDays,
+    },
+  });
+}
+
+/**
+ * Process a row from ERP pending bills query (TRAN3 Method=1 pending references)
+ */
+async function processOutstandingRow(rawRow, defaultPasswordHash, salesmanCache) {
+  const partyName    = String(rawRow.PARTY_NAME || rawRow.Name || '').trim();
+  const partyAlias   = rawRow.ALIAS ? String(rawRow.ALIAS).trim() : null;
+  const salesmanCode = String(rawRow.SALESMAN || 'UNASSIGNED').trim().toUpperCase();
+  const mobile       = rawRow.MOBILE ? String(rawRow.MOBILE).trim() : null;
+  const whatsappNo   = rawRow.WHATSAPP_NO ? String(rawRow.WHATSAPP_NO).trim() : null;
+  const email        = rawRow.EMAIL ? String(rawRow.EMAIL).trim() : null;
+  const gstin        = rawRow.GSTIN ? String(rawRow.GSTIN).trim() : null;
+  const address      = rawRow.ADDRESS ? String(rawRow.ADDRESS).trim() : null;
+  const city         = rawRow.CITY ? String(rawRow.CITY).trim() : null;
+  const state        = rawRow.STATE ? String(rawRow.STATE).trim() : null;
+
+  const creditLimit  = parseFloat(rawRow.CREDITLIMIT || rawRow.CR_LIMIT || 0);
+  const creditDays   = parseInt(rawRow.CREDIT_DAYS || rawRow.CR_DAYS || 30, 10);
+
+  const pendingAmount = parseFloat(rawRow.PENDING_AMOUNT || rawRow.CLOSING_BALANCE || 0);
+  const originalAmount = parseFloat(rawRow.REF_AMOUNT || pendingAmount);
+  
+  if (!partyName || pendingAmount <= 0) return;
+
+  const customerCode = partyAlias || partyName.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().substring(0, 15);
+
+  // 1. Upsert Salesman
+  await upsertSalesman(salesmanCode, null, defaultPasswordHash, salesmanCache);
+
+  // 2. Upsert Customer
+  const alternate_mobile = whatsappNo !== mobile ? whatsappNo : null;
+  const customer = await upsertCustomer(customerCode, {
+    partyName, partyAlias, address, city, state, gstin, email,
+    mobile, alternate_mobile, salesmanCode, creditLimit, creditDays,
+  });
+
+  // 3. Upsert Bill Voucher directly from ERP TRAN3
+  const vouNo = String(rawRow.BILL_NO || rawRow.BILL_NUMBER || rawRow.VOU_NO || `BILL-${customerCode}`).trim();
+  const vouDate = rawRow.BILL_DATE ? new Date(rawRow.BILL_DATE) : new Date();
+  const dueDate = rawRow.DUE_DATE ? new Date(rawRow.DUE_DATE) : new Date(Date.now() + creditDays * 86400000);
+  const invStatus = determineInvoiceStatus(dueDate, pendingAmount);
+
+  await prisma.invoice.upsert({
+    where: { invoice_number: vouNo },
+    create: {
+      invoice_number: vouNo,
+      invoice_date: vouDate,
+      customer_id: customer.id,
+      salesman_code: salesmanCode !== 'UNASSIGNED' ? salesmanCode : null,
+      invoice_amount: originalAmount,
+      paid_amount: Math.max(0, originalAmount - pendingAmount),
+      outstanding_amount: pendingAmount,
+      due_date: dueDate,
+      source_voucher_code: vouNo,
+      status: invStatus,
+    },
+    update: {
+      invoice_date: vouDate,
+      customer_id: customer.id,
+      salesman_code: salesmanCode !== 'UNASSIGNED' ? salesmanCode : null,
+      invoice_amount: originalAmount,
+      outstanding_amount: pendingAmount,
+      due_date: dueDate,
+      status: invStatus,
+    },
+  });
+}
+
+/**
+ * Attach line items from TRAN2 to existing pending bill invoices
+ */
+async function processInvoiceItemsOnly(vouNo, items) {
+  if (!items || items.length === 0) return;
+
+  const cleanVouNo = String(vouNo || '').trim();
+  if (!cleanVouNo) return;
+
+  // Find matching invoice in DB
+  const invoice = await prisma.invoice.findUnique({
+    where: { invoice_number: cleanVouNo },
+  });
+
+  if (!invoice) return; // Skip if voucher isn't an active pending bill
+
+  // Replace items idempotently
+  await prisma.invoiceItem.deleteMany({
+    where: { invoice_id: invoice.id },
+  });
+
+  await prisma.invoiceItem.createMany({
+    data: items.map(item => ({
+      invoice_id: invoice.id,
+      item_name: item.item_name,
+      quantity: item.quantity,
+      rate: item.rate,
+      discount: item.discount,
+      amount: item.amount,
+    })),
+  });
 }
 
 module.exports = {

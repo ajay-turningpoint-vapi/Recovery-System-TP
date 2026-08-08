@@ -1,4 +1,4 @@
-const { getDashboardSummary, getConsolidatedCustomerList } = require('../services/dashboardService');
+const { getDashboardSummary, getConsolidatedCustomerList, getSalesmanWiseSummary } = require('../services/dashboardService');
 
 async function getSummary(req, res, next) {
   try {
@@ -25,7 +25,20 @@ async function getConsolidatedCustomers(req, res, next) {
   }
 }
 
+async function getSalesmanWise(req, res, next) {
+  try {
+    const data = await getSalesmanWiseSummary(req.user);
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getSummary,
   getConsolidatedCustomers,
+  getSalesmanWise,
 };

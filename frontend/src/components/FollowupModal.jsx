@@ -43,17 +43,17 @@ export default function FollowupModal({ customer, invoices = [], onClose, onSucc
 
   return (
     <div className="modal-overlay">
-      <div className="modal-content animate-fade-in" style={{ padding: '1.5rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid #334155', pb: '0.75rem' }}>
+      <div className="modal-content animate-fade-in" style={{ padding: '1.5rem', backgroundColor: '#ffffff', color: '#0f172a' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
           <div>
-            <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#f8fafc' }}>
+            <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a' }}>
               Add Daily Follow-Up
             </h2>
-            <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-              Customer: <strong style={{ color: '#38bdf8' }}>{customer?.customer_name}</strong> ({customer?.customer_code})
+            <p style={{ fontSize: '0.8rem', color: '#64748b' }}>
+              Customer: <strong style={{ color: '#0284c7' }}>{customer?.customer_name}</strong> ({customer?.customer_code})
             </p>
           </div>
-          <button onClick={onClose} style={{ background: 'transparent', color: '#94a3b8' }}>
+          <button onClick={onClose} style={{ background: 'transparent', color: '#64748b' }}>
             <X size={20} />
           </button>
         </div>

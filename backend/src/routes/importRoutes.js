@@ -5,6 +5,7 @@ const {
   getImportHistory,
   getConfig,
   updateConfig,
+  queryCustomerInvoiceItemsController,
 } = require('../controllers/importController');
 const { authenticateToken, requireAdmin } = require('../middleware/authMiddleware');
 
@@ -14,5 +15,6 @@ router.post('/mssql', requireAdmin, triggerMssqlImport);
 router.get('/history', getImportHistory);
 router.get('/config', requireAdmin, getConfig);
 router.put('/config', requireAdmin, updateConfig);
+router.get('/test-invoice-items', queryCustomerInvoiceItemsController);
 
 module.exports = router;

@@ -225,7 +225,68 @@ async function getConsolidatedCustomerList(user, query = {}) {
   };
 }
 
+/**
+ * Get Salesman-wise aggregate breakdown for Admin Dashboard
+ */
+async function getSalesmanWiseSummary(user) {
+  const isSalesman = user && user.role === 'SALESMAN';
+  const salesmanWhere = isSalesman ? { role: 'SALESMAN', salesman_code: user.salesman_code } : { role: 'SALESMAN' };
+
+  const salesmen = await prisma.user.findMany({
+    where: salesmanWhere,
+    select: { id: true, name: true, username: true, mobile: true, salesman_code: true }
+  });
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const summaryList = [];
+
+  for (const s of salesmen) {
+    const code = s.salesman_code;
+    const custCount = await prisma.customer.count({ where: { salesman_code: code } });
+
+    const invoices = await prisma.invoice.findMany({
+      where: { salesman_code: code, outstanding_amount: { gt: 0 } },
+      select: { outstanding_amount: true, due_date: true }
+    });
+
+    const totalOutstanding = invoices.reduce((acc, i) => acc + i.outstanding_amount, 0);
+    const overdueAmount = invoices.reduce((acc, i) => {
+      return (new Date(i.due_date) < today) ? acc + i.outstanding_amount : acc;
+    }, 0);
+
+    const pendingFollowups = await prisma.followup.count({
+      where: { salesman_code: code, status: { notIn: ['Completed', 'Cancelled', 'Payment Received'] } }
+    });
+
+    const totalCollected = await prisma.payment.aggregate({
+      where: { customer: { salesman_code: code } },
+      _sum: { amount: true }
+    });
+
+    summaryList.push({
+      id: s.id,
+      name: s.name,
+      username: s.username,
+      mobile: s.mobile || 'N/A',
+      salesman_code: code,
+      total_customers: custCount,
+      total_invoices: invoices.length,
+      total_outstanding: Math.round(totalOutstanding),
+      overdue_amount: Math.round(overdueAmount),
+      pending_followups: pendingFollowups,
+      total_collected: Math.round(totalCollected._sum.amount || 0)
+    });
+  }
+
+  summaryList.sort((a, b) => b.total_outstanding - a.total_outstanding);
+
+  return summaryList;
+}
+
 module.exports = {
   getDashboardSummary,
   getConsolidatedCustomerList,
+  getSalesmanWiseSummary,
 };
